@@ -1,0 +1,44 @@
+# pnpm workspace — datadosomething monorepo (Story 1.1).
+# The three workspaces named here are referenced by name across all later
+# stories and by the dependency-boundary rules (AD-1). Do not rename.
+packages:
+  - packages/*
+  - apps/*
+
+catalog:
+  # Framework / language (pinned by AR-17)
+  # Self-hosted fonts (Story 1.2 — woff2, OFL; loaded via next/font/local)
+  '@fontsource/archivo-black': 5.3.0
+  '@fontsource/inter': 5.3.0
+  '@fontsource/space-mono': 5.3.0
+  '@testing-library/dom': 10.4.1
+  '@testing-library/jest-dom': 7.0.0
+  '@testing-library/react': 16.3.2
+  # Types
+  '@types/node': 24.13.3
+  '@types/react': 19.2.17
+  '@types/react-dom': 19.2.3
+  '@vitejs/plugin-react': 6.0.4
+  # Boundary enforcement + lint/format
+  dependency-cruiser: 18.1.0
+  eslint: 9.39.5
+  eslint-config-prettier: 10.1.8
+  # Component testing (Story 1.2)
+  jsdom: 29.1.1
+  marked: 18.0.7 # Markdown lexer for the Jina Markdown -> Document Model mapper
+  next: 16.2.11
+  # i18n (Story 1.2 — AD-13, locale in the URL)
+  next-intl: 4.13.4
+  prettier: 3.9.6
+  react: 19.2.8
+  react-dom: 19.2.8
+  typescript: 5.9.3
+  typescript-eslint: 8.65.0
+  # Engine (Story 1.4 — both MIT, license-clean for the Apache-2.0 core, AD-9)
+  unpdf: 1.6.2 # PDF text extraction for the born-digital probe
+  # Test runner (project standard — see Story 1.1 Dev Notes; do not add Jest/Mocha)
+  vitest: 4.1.10
+
+# Pin shared versions ONCE here; child packages reference them with `catalog:`.
+# `catalogMode: strict` (pnpm >= 10.12) forbids per-package version drift.
+catalogMode: strict

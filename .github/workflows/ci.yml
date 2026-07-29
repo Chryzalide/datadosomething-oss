@@ -1,0 +1,66 @@
+# CI for the PUBLIC Apache-2.0 repository.
+#
+# This file is not the upstream pipeline: the upstream one builds the hosted app's
+# image and pushes it to a registry, which has no business running here. This
+# repository builds and verifies the distributed artifact, and publishes nothing.
+#
+# It is copied verbatim by `scripts/oss-split.mjs` — edit it there, in the
+# upstream monorepo, not in the generated repo.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Boundaries (dependency gate)
+        run: pnpm boundaries
+
+      # The Apache-2.0 promise this repository makes: no non-commercially
+      # licensed dependency in the distributed closure.
+      - name: License check
+        run: pnpm license-check
+
+      - name: Build
+        run: pnpm build
+
+      # Prove the documented one-command deploy still works. Build only — the
+      # image is yours to run, not ours to publish.
+      - name: Build the container image
+        run: docker build -f apps/selfhost/Dockerfile -t datadosomething-selfhost:ci .

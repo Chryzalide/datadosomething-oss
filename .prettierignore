@@ -1,0 +1,15 @@
+node_modules
+dist
+.next
+**/next-env.d.ts
+out
+coverage
+pnpm-lock.yaml
+*.tsbuildinfo
+_bmad
+_bmad-output
+.claude
+# Recorded conversion output, not source: reformatting it would rewrite the very
+# bytes it exists to pin (Story 4.4; absent from the public tree, which has no
+# parity harness — the harness compares against the hosted app).
+parity/golden

@@ -1,0 +1,101 @@
+# One-command deploy for the self-hosted instance (Story 4.3, AR-11).
+#
+#   cp .env.example .env   # then put your provider keys in it
+#   docker compose up --build
+#   open http://127.0.0.1:8080
+#
+# This compose file covers the self-hosted app ONLY — the OSS, BYO-keys envelope.
+# It is the only compose file in the public repo, which is why it lives at the
+# root. The hosted service is deployed separately and is never co-tenanted here.
+#
+# Full deployment guide: docs/selfhost-deploy.md
+# Full variable reference: docs/selfhost-config.md
+
+services:
+  selfhost:
+    build:
+      context: .
+      dockerfile: apps/selfhost/Dockerfile
+    image: datadosomething-selfhost:local
+    # No `container_name:` on purpose. It reads as a convenience — `docker logs
+    # datadosomething-selfhost` instead of a generated name — and it costs the
+    # ability to run two instances on one host, because the second fails on a
+    # name collision rather than getting its own. Compose already gives every
+    # container a predictable project-scoped name, and `docker compose logs
+    # selfhost` addresses it by SERVICE, which is stable and does not collide.
+
+    # Keys are read from the environment (Compose also reads a `.env` file next
+    # to this one) and are never baked into the image. An unset variable stays
+    # unset rather than becoming the literal string "null": the app treats an
+    # empty value as absent and says so at startup.
+    environment:
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      JINA_API_KEY: ${JINA_API_KEY:-}
+      NETTOYAGE_ENABLED: ${NETTOYAGE_ENABLED:-}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-}
+      CONFIG_DOCS_URL: ${CONFIG_DOCS_URL:-}
+
+    # Published to LOOPBACK by default, on purpose. A self-hosted instance
+    # applies no authentication, no quota and no rate limit (Story 4.1, by
+    # design: you own the keys and the cost). Binding the host's 0.0.0.0 would
+    # therefore let anyone who can reach this machine spend your API budget.
+    # Change the left-hand side only once your own proxy/auth sits in front —
+    # see docs/selfhost-deploy.md § "Exposing it beyond localhost".
+    ports:
+      - '127.0.0.1:${SELFHOST_PORT:-8080}:8080'
+
+    # The app persists nothing: documents live in memory for the duration of a
+    # request and are never written to disk or a database (AD-7). A read-only
+    # root filesystem turns that promise into something the kernel enforces.
+    read_only: true
+    # A small writable /tmp so a read-only root cannot surprise the runtime.
+    #
+    # The long form, not `tmpfs: - /tmp:size=64m`. That short form looks like the
+    # CLI's `--tmpfs /tmp:size=64m` and is NOT the same thing: Compose's short
+    # syntax takes bare paths, and the `:size=64m` suffix produced a mount that
+    # made the container fail to exec its own entrypoint ("operation not
+    # permitted") — but only once `no-new-privileges` was also set, which is what
+    # made it look like a capability problem. Verified: identical flags via
+    # `docker run` start fine; via Compose short syntax they do not.
+    volumes:
+      - type: tmpfs
+        target: /tmp
+        tmpfs:
+          size: 67108864 # 64 MiB
+    cap_drop:
+      - ALL
+
+    # `no-new-privileges` is deliberately NOT enabled by default.
+    #
+    # It belongs in a list like this one, and on most hosts it costs nothing. On
+    # the machine this file was verified on (Docker 29.6, Linux 7.0) it makes the
+    # container fail to exec its own entrypoint — "operation not permitted",
+    # before a single line of the app runs. Confirmed to be nothing to do with
+    # this image: stock `node:24-slim` fails the same way with that one flag, with
+    # or without AppArmor. A default that turns "docker compose up" into a cryptic
+    # exec failure is worse than a default that leaves one hardening bit to the
+    # operator, so it is opt-in and honest rather than on and occasionally fatal.
+    #
+    # Turn it on if your host is unaffected (start the container and check it is
+    # not restart-looping):
+    #
+    # security_opt:
+    #   - no-new-privileges:true
+
+    restart: unless-stopped
+
+    # No `healthcheck:` here on purpose — the image carries its own and Compose
+    # inherits it, so `docker run` and `docker compose up` report health the same
+    # way and there is no second copy to drift. (Restating it here also fails
+    # outright: Compose interpolates `${…}`, and the check's body contains
+    # `${process.env.PORT}`.) It tracks "is the server answering", not "are the
+    # keys valid" — a misconfigured instance is still a running instance
+    # (Story 4.2 AC1), and conflating the two would restart-loop a missing key.
+
+    # Startup diagnostics and conversion errors go to the container log; bound
+    # it so a long-running instance cannot fill the host disk.
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'

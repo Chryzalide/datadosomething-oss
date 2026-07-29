@@ -1,0 +1,28 @@
+# Shared by both images (apps/hub and apps/selfhost). Only source + lockfile are
+# needed to build inside the image; everything else is rebuilt in-container or
+# irrelevant to it. Note `.env` and `.env.*`: provider keys are supplied at run
+# time and must never be baked into a layer.
+node_modules
+**/node_modules
+.next
+**/.next
+dist
+**/dist
+out
+**/out
+coverage
+**/coverage
+*.tsbuildinfo
+**/*.tsbuildinfo
+.git
+.github
+.claude
+_bmad
+_bmad-output
+# The parity harness is a CI gate, never part of a runtime image, and it holds
+# the only code in the repo that imports both envelopes (Story 4.4).
+parity
+docs
+*.md
+.env
+.env.*

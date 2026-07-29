@@ -1,0 +1,14 @@
+{
+  // Typechecks the test files `tsconfig.json` excludes from the build.
+  // See `packages/core/tsconfig.test.json` for the full rationale — same
+  // pattern, same reason, and here it found 5 unchecked `unknown` dereferences
+  // in `server.test.ts`.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "incremental": false,
+    "noEmit": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["dist", "node_modules"]
+}

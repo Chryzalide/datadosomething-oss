@@ -1,0 +1,23 @@
+{
+  // Typechecks what `tsconfig.json` deliberately does not BUILD: the test files
+  // and the `__testing__/` scaffolding.
+  //
+  // Those exclusions are right for the emitted artifact — a `.test.js` in `dist`
+  // would ship the suite to every consumer — but they also meant 21 test files
+  // were transpiled by Vitest and checked by nobody. Pointing the compiler at
+  // them found 23 real errors, every one of them an assertion reading a mock-call
+  // slot the type system said could not exist: the URL, method, headers and body
+  // checks in all three adapter suites were type-unsafe.
+  //
+  // Same shape as `parity/tsconfig.json` (Story 4.4), and for the same reason.
+  // `noEmit` + `composite: false` so this never writes anything and never
+  // competes with the build's `.tsbuildinfo`.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "incremental": false,
+    "noEmit": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["dist", "node_modules"]
+}

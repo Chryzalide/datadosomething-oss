@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    // Inside `dist`, not beside the config. `tsc -b` skips emitting when its
+    // build info says everything is current, so a `.tsbuildinfo` that OUTLIVES
+    // `rm -rf dist` makes the next build produce nothing and the ESM-extension
+    // step die on a bare ENOENT. Keeping the two together means deleting the
+    // output really does force a rebuild.
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
+  },
+  "include": ["src/**/*"],
+  // `__testing__/` is suite scaffolding, not distributed surface: excluded from
+  // the emitted build, but typechecked by tsconfig.test.json.
+  "exclude": ["dist", "node_modules", "**/*.test.ts", "src/__testing__/**"]
+}

@@ -1,0 +1,11 @@
+# The open donation channel (Story 5.5, FR-12 / CAP-11).
+#
+# GitHub renders this file as the repository's "Sponsor" button — the second of
+# the two places FR-12 requires a working Ko-fi link, the first being the hub's
+# footer. It is support only: donating unlocks no functionality anywhere in the
+# suite.
+#
+# One project, one handle. This file and the application's donation module are the
+# only two places that name it, and a test fails if the two ever disagree — see
+# docs/donations.md in the upstream monorepo.
+ko_fi: souryan
