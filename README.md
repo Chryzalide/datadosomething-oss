@@ -1,6 +1,6 @@
 # datadosomething — self-host
 
-**Version `1.1.0`** · **Document Model & JSON Schema `v1.0`** · **Node `24.22.1`** · **License `Apache-2.0`**
+**Version `1.1.0`** · **Document Model & JSON Schema `v1.0`** · **Node `24.18.0`** · **License `Apache-2.0`**
 
 Turn PDFs (born-digital or scanned) and images (`PNG`, `JPG`) into clean **Markdown** (`pdftomd`) or structured, schema-versioned **JSON** (`pdftojson`) — on your own infrastructure, with your own provider keys, **zero retention**, and **no quota**.
 
@@ -106,7 +106,7 @@ docker run --rm -p 127.0.0.1:8080:8080 \
 
 ### Option 3 — Native Node.js (without Docker)
 
-Requires **Node `24.22.1`** (see [`.nvmrc`](.nvmrc)) and **pnpm `10`**:
+Requires **Node `24.18.0`** (see [`.nvmrc`](.nvmrc)) and **pnpm `10`**:
 
 ```bash
 corepack enable

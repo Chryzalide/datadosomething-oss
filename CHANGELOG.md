@@ -64,5 +64,5 @@ First stable Apache-2.0 release of the pure conversion engine (`@datadosomething
   - Zero-dependency `node:http` server exposing `GET /` (self-contained accessible Web UI with zero external requests), `POST /api/pdftomd`, `POST /api/pdftojson`, and `GET /healthz`.
   - Streaming upload size guard (`MAX_UPLOAD_BYTES`, default 100 MB), startup configuration diagnostics (`configReport`), Verified Nettoyage enabled by default (`NETTOYAGE_ENABLED=true`), and zero disk/database retention (`Cache-Control: no-store`).
 - **Hardened Container & Supply-Chain Gates**:
-  - Multi-stage `apps/selfhost/Dockerfile` pinned to `node:24.22.1-slim` and `docker-compose.yml` bound to `127.0.0.1` with `read_only: true` and `cap_drop: ALL`.
+  - Multi-stage `apps/selfhost/Dockerfile` pinned to `node:24.18.0-slim` and `docker-compose.yml` bound to `127.0.0.1` with `read_only: true` and `cap_drop: ALL`.
   - Architectural boundary enforcement (`pnpm boundaries` via `dependency-cruiser`) and permissive runtime dependency verification (`pnpm license-check`).
