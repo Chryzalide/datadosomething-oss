@@ -11,10 +11,10 @@
 # only difference between the two is that `apps/` holds one app there instead of
 # two, so nothing below may name `apps/hub`.
 #
-# Base pinned to Node 24 (Active LTS) — matches .nvmrc and CI.
+# Base pinned to the exact Node 24 patch in .nvmrc (2026-10-21 security release).
 
 # ---- Builder ---------------------------------------------------------------
-FROM node:24-slim AS builder
+FROM node:24.22.1-slim AS builder
 WORKDIR /app
 # Non-interactive: without it pnpm refuses to purge node_modules for the
 # production re-install below ("no TTY").
@@ -58,7 +58,7 @@ RUN pnpm --filter selfhost... build
 RUN pnpm install --frozen-lockfile --prod --ignore-scripts --filter selfhost...
 
 # ---- Runner ----------------------------------------------------------------
-FROM node:24-slim AS runner
+FROM node:24.22.1-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080

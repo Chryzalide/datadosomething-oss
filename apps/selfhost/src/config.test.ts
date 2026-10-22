@@ -97,6 +97,13 @@ describe('configDiagnostics (AC1, AC2)', () => {
     expect(shape(env)).toEqual(['error:MISTRAL_API_KEY']);
   });
 
+  it('drops the Nettoyage notice when NETTOYAGE_API_KEY is provided separately (2.2)', () => {
+    const env = { JINA_API_KEY: 'j', NETTOYAGE_API_KEY: 'ollama-or-vllm-key' };
+    const diagnostics = configDiagnostics(env);
+    expect(diagnostics.some((d) => /Nettoyage is enabled but needs/.test(d.message))).toBe(false);
+    expect(shape(env)).toEqual(['error:MISTRAL_API_KEY']);
+  });
+
   it('treats a blank key as absent', () => {
     expect(configDiagnostics({ MISTRAL_API_KEY: '  ', JINA_API_KEY: '' })).toHaveLength(1);
   });

@@ -486,3 +486,155 @@ describe('Mistral-only converts a born-digital PDF via graceful fallback (AC2, A
     }
   });
 });
+
+describe('API metadata, per-request options & SELFHOST_API_TOKEN (2.2 / 2.3)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('returns source metadata { type, pages, provider } on /api/pdftomd and /api/pdftojson (2.3.4)', async () => {
+    const { base, close } = await boot();
+    try {
+      const mdRes = await fetch(`${base}/api/pdftomd`, { method: 'POST', body: pdfForm() });
+      expect(mdRes.status).toBe(200);
+      const mdBody = (await mdRes.json()) as {
+        markdown: string;
+        source: { type: string; pages: number; provider: string };
+      };
+      expect(mdBody.source).toEqual({ type: 'pdf', pages: 2, provider: 'fake' });
+    } finally {
+      await close();
+    }
+  });
+
+  it('supports per-request nettoyage=false in FormData or query string even when enabled in env (2.3.3)', async () => {
+    const { base, close } = await boot({
+      env: { MISTRAL_API_KEY: 'k', NETTOYAGE_ENABLED: 'true' },
+    });
+    try {
+      const form = pdfForm();
+      form.append('nettoyage', 'false');
+      const res = await fetch(`${base}/api/pdftomd`, { method: 'POST', body: form });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { markdown: string; nettoyage?: unknown };
+      expect(body.nettoyage).toBeUndefined();
+      expect(body.markdown).toContain(BOX_H);
+    } finally {
+      await close();
+    }
+  });
+
+  it('filters extracted pages when pages=2 is passed and 400s on invalid range (2.3.5)', async () => {
+    const { base, close } = await boot();
+    try {
+      const form = pdfForm();
+      form.append('pages', '2');
+      const res = await fetch(`${base}/api/pdftomd`, { method: 'POST', body: form });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        markdown: string;
+        source: { pages: number };
+      };
+      expect(body.source.pages).toBe(1);
+      expect(body.markdown).not.toContain('Rapport');
+      expect(body.markdown).toContain('deux');
+
+      const badRes = await fetch(`${base}/api/pdftomd?pages=5-2`, {
+        method: 'POST',
+        body: pdfForm(),
+      });
+      expect(badRes.status).toBe(400);
+      expect(((await badRes.json()) as { error: string }).error).toMatch(/pages/);
+    } finally {
+      await close();
+    }
+  });
+
+  it('enforces constant-time Bearer token auth on /api/* when SELFHOST_API_TOKEN is set (2.3.6)', async () => {
+    const { base, close } = await boot({
+      env: { SELFHOST_API_TOKEN: 'secret-token-123' },
+    });
+    try {
+      // /healthz stays accessible for container health checks
+      expect((await fetch(`${base}/healthz`)).status).toBe(200);
+
+      // Missing token -> 401
+      const noAuth = await fetch(`${base}/api/pdftomd`, { method: 'POST', body: pdfForm() });
+      expect(noAuth.status).toBe(401);
+      expect(noAuth.headers.get('www-authenticate')).toBe('Bearer');
+
+      // Wrong token -> 401
+      const wrongAuth = await fetch(`${base}/api/pdftomd`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer wrong-token' },
+        body: pdfForm(),
+      });
+      expect(wrongAuth.status).toBe(401);
+
+      // Valid token -> 200
+      const okAuth = await fetch(`${base}/api/pdftomd`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer secret-token-123' },
+        body: pdfForm(),
+      });
+      expect(okAuth.status).toBe(200);
+    } finally {
+      await close();
+    }
+  });
+
+  it('uses custom NETTOYAGE_BASE_URL, NETTOYAGE_MODEL and NETTOYAGE_API_KEY when configured (2.2)', async () => {
+    const real = globalThis.fetch;
+    let calledUrl = '';
+    let calledModel = '';
+    let calledAuth = '';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: unknown, init?: { body?: unknown; headers?: unknown }) => {
+        const url = String(input);
+        if (!url.includes('llm.custom.local')) return real(input as string, init as RequestInit);
+        calledUrl = url;
+        const headers = new Headers(init?.headers as ConstructorParameters<typeof Headers>[0]);
+        calledAuth = headers.get('authorization') ?? '';
+        const body = JSON.parse(String(init?.body)) as {
+          model: string;
+          messages: Array<{ content: string }>;
+        };
+        calledModel = body.model;
+        const texts = JSON.parse(body.messages[1]?.content ?? '[]') as string[];
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify(
+                    texts.map((t) => t.replaceAll(BOX_H, '').replace(/\s+/g, ' ').trim()),
+                  ),
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }),
+    );
+
+    const { base, close } = await boot({
+      env: {
+        NETTOYAGE_API_KEY: 'custom-llm-key',
+        NETTOYAGE_BASE_URL: 'https://llm.custom.local',
+        NETTOYAGE_MODEL: 'qwen2.5-7b-instruct',
+        NETTOYAGE_TIMEOUT_MS: '10000',
+      },
+    });
+    try {
+      const res = await fetch(`${base}/api/pdftomd`, { method: 'POST', body: pdfForm() });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { markdown: string; nettoyage: { outcome: string } };
+      expect(body.nettoyage).toEqual({ outcome: 'cleaned' });
+      expect(calledUrl).toBe('https://llm.custom.local/v1/chat/completions');
+      expect(calledModel).toBe('qwen2.5-7b-instruct');
+      expect(calledAuth).toBe('Bearer custom-llm-key');
+    } finally {
+      await close();
+    }
+  });
+});

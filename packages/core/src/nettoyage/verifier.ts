@@ -32,7 +32,7 @@
 import type { Block, DocumentModel } from '../document-model';
 import { charClass, type CodePointRange } from './char-class';
 import { flattenTexts } from './document-texts';
-import { ruleCleanText } from './rule-pass';
+import { ruleCleanCodeText, ruleCleanText } from './rule-pass';
 
 /**
  * The ONLY characters stage 2 is permitted to delete: OCR frame and scan noise.
@@ -151,6 +151,8 @@ function structureOf(block: Block): string {
       return `list:${block.ordered ? 'ordered' : 'unordered'}:${block.items.length}:${block.page}`;
     case 'table':
       return `table:[${block.rows.map((row) => row.length).join(',')}]:${block.page}`;
+    case 'code':
+      return `code:${block.language ?? ''}:${block.page}`;
     default: {
       const exhaustive: never = block;
       void exhaustive;
@@ -213,4 +215,68 @@ export function verifyCleanedDocument(
   }
 
   return ACCEPTED;
+}
+
+/** Detail of a single rejected text slot during granular verification. */
+export interface NettoyageSlotRejection {
+  index: number;
+  reason: NettoyageRejectionReason;
+  detail: string;
+}
+
+/** Outcome of granular per-string verification and reconciliation. */
+export interface ReconciledTextsResult {
+  /** Reconciled texts: accepted candidates (rule-cleaned) or raw fallback per slot. */
+  texts: string[];
+  /** Number of noisy slots (matching `NETTOYAGE_REMOVABLE_NOISE`) that were accepted. */
+  acceptedNoisyCount: number;
+  /** Slots rejected by `verifyCleanedText` that fell back to `ruleCleanText(raw)`. */
+  rejections: NettoyageSlotRejection[];
+}
+
+/**
+ * Granular per-string verification (Stage 3): since `verifyCleanedText(raw, candidate)`
+ * is a purely local invariant on each text slot, keep `ruleCleanText(candidate)` for
+ * accepted slots and fall back to `ruleCleanText(raw)` only for rejected slots.
+ */
+export function reconcileCleanedTexts(
+  rawTexts: readonly string[],
+  candidateTexts: readonly string[],
+): ReconciledTextsResult {
+  const texts: string[] = [];
+  const rejections: NettoyageSlotRejection[] = [];
+  let acceptedNoisyCount = 0;
+
+  for (const [index, rawText] of rawTexts.entries()) {
+    const isMultiline = rawText.includes('\n');
+    const cleanSlot = isMultiline ? ruleCleanCodeText : ruleCleanText;
+    const normalizedRaw = cleanSlot(rawText);
+    const candidateText = candidateTexts[index];
+    if (candidateText === undefined) {
+      texts.push(normalizedRaw);
+      rejections.push({
+        index,
+        reason: 'text-count-mismatch',
+        detail: `text value ${index}: missing candidate text`,
+      });
+      continue;
+    }
+
+    const verdict = verifyCleanedText(normalizedRaw, candidateText);
+    if (verdict.accepted) {
+      texts.push(cleanSlot(candidateText));
+      if (NETTOYAGE_REMOVABLE_NOISE.test(normalizedRaw)) {
+        acceptedNoisyCount += 1;
+      }
+    } else {
+      texts.push(normalizedRaw);
+      rejections.push({
+        index,
+        reason: verdict.reason,
+        detail: `text value ${index}: ${verdict.detail}`,
+      });
+    }
+  }
+
+  return { texts, acceptedNoisyCount, rejections };
 }

@@ -15,7 +15,7 @@
 export const DOCUMENT_MODEL_VERSION = '1.0' as const;
 
 /** The closed set of block discriminants (AD-4). */
-export type BlockType = 'heading' | 'paragraph' | 'list' | 'table';
+export type BlockType = 'heading' | 'paragraph' | 'list' | 'table' | 'code';
 
 /** Optional best-effort bounding box (present iff a provider supplies it).
  *  The block's own `page` is the authoritative page location. */
@@ -58,8 +58,14 @@ export interface TableBlock extends BlockBase {
   rows: string[][];
 }
 
+export interface CodeBlock extends BlockBase {
+  type: 'code';
+  language?: string;
+  text: string;
+}
+
 /** A block is exactly one of the closed set (discriminated by `type`). */
-export type Block = HeadingBlock | ParagraphBlock | ListBlock | TableBlock;
+export type Block = HeadingBlock | ParagraphBlock | ListBlock | TableBlock | CodeBlock;
 
 /** Document-level provenance (AD-4). Values are set by an adapter at runtime. */
 export interface DocumentSource {

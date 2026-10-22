@@ -9,7 +9,7 @@
  * Date/random/locale) so byte-identical output and the golden-file parity
  * harness (AD-14) hold.
  */
-import type { Block, DocumentModel, HeadingBlock, ListBlock } from '../document-model';
+import type { Block, CodeBlock, DocumentModel, HeadingBlock, ListBlock } from '../document-model';
 
 /**
  * Escape inline Markdown-significant characters and collapse embedded newlines,
@@ -45,11 +45,36 @@ function renderHeading(block: HeadingBlock): string {
   return `${'#'.repeat(level)} ${escapeInline(block.text)}`;
 }
 
+const SUBLIST_LINE_RE = /^(\s+)([-*+]|\d+\.)\s+(.*)$/;
+
+function renderListItem(item: string, prefix: string): string {
+  const lines = item.split(/\r\n?|\n/);
+  if (lines.length > 1 && lines.slice(1).every((line) => SUBLIST_LINE_RE.test(line))) {
+    const head = `${prefix}${escapeText(lines[0] ?? '')}`;
+    const subLines = lines.slice(1).map((line) => {
+      const match = SUBLIST_LINE_RE.exec(line);
+      if (!match) return escapeText(line);
+      return `${match[1]}${match[2]} ${escapeText(match[3] ?? '')}`;
+    });
+    return [head, ...subLines].join('\n');
+  }
+  return `${prefix}${escapeText(item)}`;
+}
+
 function renderList(block: ListBlock): string {
   if (block.items.length === 0) return '';
   return block.items
-    .map((item, i) => (block.ordered ? `${i + 1}. ${escapeText(item)}` : `- ${escapeText(item)}`))
+    .map((item, i) => renderListItem(item, block.ordered ? `${i + 1}. ` : '- '))
     .join('\n');
+}
+
+function renderCode(block: CodeBlock): string {
+  const info = block.language ? block.language.replace(/[\r\n`]/g, '').trim() : '';
+  const backtickRuns = block.text.match(/`+/g) ?? [];
+  const maxBackticks = backtickRuns.reduce((max, run) => Math.max(max, run.length), 0);
+  const fence = '`'.repeat(Math.max(3, maxBackticks + 1));
+  const normalizedText = block.text.replace(/\r\n?/g, '\n');
+  return `${fence}${info}\n${normalizedText}\n${fence}`;
 }
 
 function renderTable(rows: string[][]): string {
@@ -78,6 +103,8 @@ function renderBlock(block: Block): string {
       return renderList(block);
     case 'table':
       return renderTable(block.rows);
+    case 'code':
+      return renderCode(block);
     default: {
       // Exhaustiveness: the block set is closed (AD-4). An out-of-contract block
       // reaching here at runtime renders as nothing rather than corrupting output.

@@ -58,6 +58,7 @@ export const PDFTOJSON_JSON_SCHEMA = {
         { $ref: '#/$defs/paragraph' },
         { $ref: '#/$defs/list' },
         { $ref: '#/$defs/table' },
+        { $ref: '#/$defs/code' },
       ],
     },
     heading: {
@@ -102,6 +103,17 @@ export const PDFTOJSON_JSON_SCHEMA = {
           type: 'array',
           items: { type: 'array', items: { type: 'string' } },
         },
+        ...blockBaseProps,
+      },
+    },
+    code: {
+      type: 'object',
+      required: ['type', 'text', 'page'],
+      additionalProperties: false,
+      properties: {
+        type: { const: 'code' },
+        language: { type: 'string' },
+        text: { type: 'string' },
         ...blockBaseProps,
       },
     },

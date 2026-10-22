@@ -1,5 +1,7 @@
 import {
   convertToDocument,
+  type DocumentModel,
+  type DocumentSource,
   EngineConfigError,
   type EngineRegistry,
   type EngineSource,
@@ -9,6 +11,7 @@ import {
 } from '@datadosomething/core';
 import { withConfigDocs } from './config';
 import { applyNettoyage, type NettoyageReport } from './nettoyage';
+import { parseEnabledFlag, selfhostNettoyageEnabled } from './nettoyage-config';
 import { maxUploadBytes, validateUpload } from './upload';
 
 /**
@@ -30,10 +33,20 @@ export interface ConversionOutcome {
   body: Record<string, unknown>;
 }
 
-const ok = (kind: OutputKind, sortie: string, report?: NettoyageReport): ConversionOutcome => ({
+const ok = (
+  kind: OutputKind,
+  sortie: string,
+  source: DocumentSource,
+  report?: NettoyageReport,
+): ConversionOutcome => ({
   status: 200,
   body: {
     [kind === 'markdown' ? 'markdown' : 'json']: sortie,
+    source: {
+      type: source.type,
+      pages: source.pages,
+      provider: source.provider,
+    },
     ...(report ? { nettoyage: report } : {}),
   },
 });
@@ -43,6 +56,57 @@ const fail = (status: number, error: string): ConversionOutcome => ({ status, bo
 export interface ConvertOptions {
   engines: EngineRegistry;
   env?: Record<string, string | undefined>;
+  /** Optional query-string override for `nettoyage=true|false`. */
+  nettoyage?: string;
+  /** Optional query-string page range specification (e.g. `1-5` or `1,3-5`). */
+  pages?: string;
+}
+
+/**
+ * Parse a 1-based page range specification such as `"1-5"`, `"2"`, or `"1,3-5"`.
+ * Returns `null` when the specification is malformed.
+ */
+export function parsePageSelection(raw: string): Set<number> | null {
+  const trimmed = raw.trim();
+  if (trimmed === '') return null;
+  const selected = new Set<number>();
+  for (const part of trimmed.split(',')) {
+    const token = part.trim();
+    if (!token) return null;
+    const rangeMatch = /^(\d+)\s*-\s*(\d+)$/.exec(token);
+    if (rangeMatch) {
+      const start = Number(rangeMatch[1]);
+      const end = Number(rangeMatch[2]);
+      if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start) {
+        return null;
+      }
+      for (let p = start; p <= end; p += 1) selected.add(p);
+      continue;
+    }
+    if (/^\d+$/.test(token)) {
+      const page = Number(token);
+      if (!Number.isInteger(page) || page < 1) return null;
+      selected.add(page);
+      continue;
+    }
+    return null;
+  }
+  return selected.size > 0 ? selected : null;
+}
+
+function filterDocumentPages(doc: DocumentModel, selectedPages: Set<number>): DocumentModel {
+  const blocks = doc.blocks.filter((block) => selectedPages.has(block.page));
+  const matchingPageCount = [...selectedPages].filter(
+    (p) => p >= 1 && p <= Math.max(1, doc.source.pages),
+  ).length;
+  return {
+    version: doc.version,
+    source: {
+      ...doc.source,
+      pages: matchingPageCount > 0 ? matchingPageCount : blocks.length > 0 ? 1 : 0,
+    },
+    blocks,
+  };
 }
 
 /** Turn the multipart form into an EngineSource, or explain why it cannot. */
@@ -88,10 +152,47 @@ export async function convert(
   const read = await readSource(form, maxUploadBytes(env));
   if ('error' in read) return read.error;
 
+  const formPages = form.get('pages');
+  const rawPages =
+    typeof formPages === 'string' && formPages.trim() !== ''
+      ? formPages.trim()
+      : options.pages?.trim();
+  let selectedPages: Set<number> | undefined;
+  if (rawPages) {
+    const parsed = parsePageSelection(rawPages);
+    if (!parsed) {
+      return fail(
+        400,
+        'Invalid "pages" range — use 1-based page numbers or ranges such as "1-5" or "1,3-5".',
+      );
+    }
+    selectedPages = parsed;
+  }
+
+  const formNettoyage = form.get('nettoyage');
+  const rawNettoyage =
+    typeof formNettoyage === 'string' && formNettoyage.trim() !== ''
+      ? formNettoyage.trim()
+      : options.nettoyage?.trim();
+  const nettoyageOverride =
+    rawNettoyage !== undefined && rawNettoyage !== ''
+      ? parseEnabledFlag(rawNettoyage, selfhostNettoyageEnabled(env))
+      : undefined;
+
   try {
-    const doc = await convertToDocument(read.source, options.engines);
-    const { document, report } = await applyNettoyage(doc, env);
-    return ok(kind, kind === 'markdown' ? renderMarkdown(document) : renderJson(document), report);
+    const extracted = await convertToDocument(read.source, options.engines);
+    const doc = selectedPages ? filterDocumentPages(extracted, selectedPages) : extracted;
+    const { document, report } = await applyNettoyage(
+      doc,
+      env,
+      nettoyageOverride !== undefined ? { enabled: nettoyageOverride } : {},
+    );
+    return ok(
+      kind,
+      kind === 'markdown' ? renderMarkdown(document) : renderJson(document),
+      document.source,
+      report,
+    );
   } catch (cause) {
     // A missing OR REJECTED key must never be an opaque crash (FR-14, UX-DR10).
     // `EngineAuthError extends EngineConfigError`, so a 401/403 from any provider

@@ -19,6 +19,7 @@
  * means by "page count detected from PDF metadata before OCR".
  */
 import { getDocumentProxy } from 'unpdf';
+import { getCachedPdfPageCount, setCachedPdfPageCount } from './text-layer-probe';
 
 /**
  * A PDF whose page count could not be read: corrupt, encrypted, or not a PDF at
@@ -45,6 +46,9 @@ export class PageCountError extends Error {
  * documents, and it bites harder here because this runs first.
  */
 export async function countPdfPages(bytes: Uint8Array): Promise<number> {
+  const cached = getCachedPdfPageCount(bytes);
+  if (cached !== undefined) return cached;
+
   let pages: number;
   try {
     const pdf = await getDocumentProxy(new Uint8Array(bytes));
@@ -62,5 +66,6 @@ export async function countPdfPages(bytes: Uint8Array): Promise<number> {
   if (!Number.isInteger(pages) || pages < 1) {
     throw new PageCountError(`The PDF reports an impossible page count (${String(pages)}).`);
   }
+  setCachedPdfPageCount(bytes, pages);
   return pages;
 }

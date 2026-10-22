@@ -27,6 +27,15 @@ describe('EngineRouter (AC2/AC3)', () => {
     expect(ocr.extract).not.toHaveBeenCalled();
   });
 
+  it('routes a born-digital PDF to localReader when reader is unconfigured (1.3)', async () => {
+    vi.mocked(probeTextLayer).mockResolvedValue('born-digital');
+    const localReader = mockEngine('reader', 'local-pdf');
+    const ocr = mockEngine('ocr', 'mistral');
+    await new EngineRouter({ localReader, ocr }).route(source);
+    expect(localReader.extract).toHaveBeenCalledOnce();
+    expect(ocr.extract).not.toHaveBeenCalled();
+  });
+
   it('falls back to OCR when the reader is unconfigured (AC3)', async () => {
     vi.mocked(probeTextLayer).mockResolvedValue('born-digital');
     const ocr = mockEngine('ocr', 'mistral');

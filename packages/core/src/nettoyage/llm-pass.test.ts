@@ -21,6 +21,26 @@ const sample = doc([
   },
 ]);
 
+const noisySample = doc([
+  { type: 'heading', level: 2, text: '|Titre', page: 1, confidence: 0.8 },
+  { type: 'paragraph', text: '|Corps.', page: 1, bbox: { x: 1, y: 2, width: 3, height: 4 } },
+  { type: 'list', ordered: true, items: ['|un', '|deux'], page: 2 },
+  {
+    type: 'table',
+    rows: [
+      ['|h1', '|h2'],
+      ['|a', '|b'],
+    ],
+    page: 2,
+  },
+]);
+
+const sparseSample = doc([
+  { type: 'heading', level: 2, text: '|Titre', page: 1 },
+  { type: 'paragraph', text: 'Corps propre.', page: 1 },
+  { type: 'list', ordered: true, items: ['un', '`deux`'], page: 2 },
+]);
+
 /** A provider stub that records its requests and replies with `reply`. */
 function stubProvider(reply: string | (() => never)): LlmProvider & {
   calls: LlmCompletionRequest[];
@@ -77,25 +97,25 @@ describe('flattenTexts / withTexts — the text channel (AC1)', () => {
 });
 
 describe('runLlmCleanupPass — request shape (AC1)', () => {
-  it('sends the bounding prompt as system and the texts as a JSON array', async () => {
-    const provider = stubProvider(JSON.stringify(flattenTexts(sample)));
-    const result = await runLlmCleanupPass(sample, provider);
+  it('sends the bounding prompt as system and the noisy texts as a JSON array', async () => {
+    const provider = stubProvider(JSON.stringify(flattenTexts(noisySample)));
+    const result = await runLlmCleanupPass(noisySample, provider);
 
     expect(result.ok).toBe(true);
     expect(provider.calls).toHaveLength(1);
     expect(provider.calls[0]?.system).toBe(NETTOYAGE_SYSTEM_PROMPT);
-    expect(JSON.parse(provider.calls[0]?.user ?? '')).toEqual(flattenTexts(sample));
+    expect(JSON.parse(provider.calls[0]?.user ?? '')).toEqual(flattenTexts(noisySample));
   });
 
   it('makes exactly ONE call per document, not one per block', async () => {
-    const provider = stubProvider(JSON.stringify(flattenTexts(sample)));
-    await runLlmCleanupPass(sample, provider);
+    const provider = stubProvider(JSON.stringify(flattenTexts(noisySample)));
+    await runLlmCleanupPass(noisySample, provider);
     expect(provider.complete).toHaveBeenCalledTimes(1);
   });
 
   it('never sends structure — the payload is strings only', async () => {
-    const provider = stubProvider(JSON.stringify(flattenTexts(sample)));
-    await runLlmCleanupPass(sample, provider);
+    const provider = stubProvider(JSON.stringify(flattenTexts(noisySample)));
+    await runLlmCleanupPass(noisySample, provider);
     const payload = JSON.parse(provider.calls[0]?.user ?? '') as unknown;
     expect(Array.isArray(payload)).toBe(true);
     for (const element of payload as unknown[]) expect(typeof element).toBe('string');
@@ -106,25 +126,43 @@ describe('runLlmCleanupPass — request shape (AC1)', () => {
   });
 
   it('passes maxOutputTokens through only when set', async () => {
-    const withoutCap = stubProvider(JSON.stringify(flattenTexts(sample)));
-    await runLlmCleanupPass(sample, withoutCap);
+    const withoutCap = stubProvider(JSON.stringify(flattenTexts(noisySample)));
+    await runLlmCleanupPass(noisySample, withoutCap);
     expect(withoutCap.calls[0]).not.toHaveProperty('maxOutputTokens');
 
-    const withCap = stubProvider(JSON.stringify(flattenTexts(sample)));
-    await runLlmCleanupPass(sample, withCap, { maxOutputTokens: 512 });
+    const withCap = stubProvider(JSON.stringify(flattenTexts(noisySample)));
+    await runLlmCleanupPass(noisySample, withCap, { maxOutputTokens: 512 });
     expect(withCap.calls[0]?.maxOutputTokens).toBe(512);
   });
 
   it('skips the call entirely for a document with no text values', async () => {
     const provider = stubProvider('[]');
     const result = await runLlmCleanupPass(doc([]), provider);
-    expect(result).toEqual({ ok: true, texts: [] });
+    expect(result).toEqual({ ok: true, texts: [], skipped: true });
     expect(provider.complete).not.toHaveBeenCalled();
+  });
+
+  it('short-circuits with zero LLM calls when no string contains removable noise', async () => {
+    const provider = stubProvider('[]');
+    const result = await runLlmCleanupPass(sample, provider);
+    expect(result).toEqual({ ok: true, texts: flattenTexts(sample), skipped: true });
+    expect(provider.complete).not.toHaveBeenCalled();
+  });
+
+  it('sends only the noisy subset (sparse pass) and re-injects replies at original indices', async () => {
+    const provider = stubProvider(JSON.stringify(['Titre', 'deux']));
+    const result = await runLlmCleanupPass(sparseSample, provider);
+    expect(provider.calls).toHaveLength(1);
+    expect(JSON.parse(provider.calls[0]?.user ?? '')).toEqual(['|Titre', '`deux`']);
+    expect(result).toEqual({
+      ok: true,
+      texts: ['Titre', 'Corps propre.', 'un', 'deux'],
+    });
   });
 });
 
 describe('runLlmCleanupPass — reply handling (AC1, AC3)', () => {
-  const one = doc([{ type: 'paragraph', text: 'a', page: 1 }]);
+  const one = doc([{ type: 'paragraph', text: '|a', page: 1 }]);
 
   it('accepts a well-formed reply', async () => {
     const result = await runLlmCleanupPass(one, stubProvider('["a"]'));
@@ -160,7 +198,7 @@ describe('runLlmCleanupPass — reply handling (AC1, AC3)', () => {
   });
 
   it('surfaces a wrong-length reply (a truncated or merged answer)', async () => {
-    const result = await runLlmCleanupPass(sample, stubProvider('["Titre","Corps."]'));
+    const result = await runLlmCleanupPass(noisySample, stubProvider('["Titre","Corps."]'));
     expect(result).toMatchObject({ ok: false, failure: 'reply-length-mismatch' });
     if (!result.ok) expect(result.detail).toMatch(/expected 8 elements, received 2/);
   });

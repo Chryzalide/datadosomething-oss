@@ -22,6 +22,7 @@
 import type { DocumentModel } from '../document-model';
 import { flattenTexts, textCount } from './document-texts';
 import type { LlmProvider } from './llm-port';
+import { NETTOYAGE_REMOVABLE_NOISE } from './verifier';
 
 /**
  * The bounding instruction. It enumerates what may be deleted and forbids every
@@ -61,7 +62,8 @@ export type LlmPassFailure =
 
 /** Stage 2's outcome: the candidate text values, or a typed failure. */
 export type LlmPassResult =
-  { ok: true; texts: string[] } | { ok: false; failure: LlmPassFailure; detail: string };
+  | { ok: true; texts: string[]; skipped?: boolean }
+  | { ok: false; failure: LlmPassFailure; detail: string };
 
 export interface LlmPassOptions {
   /**
@@ -101,15 +103,32 @@ export async function runLlmCleanupPass(
   const expected = textCount(doc);
   // Nothing to clean — skip the call entirely rather than pay for an empty round
   // trip. `[]` is a legitimate accepted candidate.
-  if (expected === 0) return { ok: true, texts: [] };
+  if (expected === 0) return { ok: true, texts: [], skipped: true };
 
   const texts = flattenTexts(doc);
+
+  // Sparse LLM pass: only elements containing at least one character in
+  // `NETTOYAGE_REMOVABLE_NOISE` can be modified by stage 2 without being
+  // rejected by stage 3. Extract the noisy subset along with its original
+  // indices, and short-circuit with zero network calls when none match.
+  const noisyIndices: number[] = [];
+  const noisyTexts: string[] = [];
+  for (const [index, text] of texts.entries()) {
+    if (NETTOYAGE_REMOVABLE_NOISE.test(text)) {
+      noisyIndices.push(index);
+      noisyTexts.push(text);
+    }
+  }
+
+  if (noisyIndices.length === 0) {
+    return { ok: true, texts, skipped: true };
+  }
 
   let reply: string;
   try {
     reply = await provider.complete({
       system: NETTOYAGE_SYSTEM_PROMPT,
-      user: JSON.stringify(texts),
+      user: JSON.stringify(noisyTexts),
       ...(options.maxOutputTokens !== undefined
         ? { maxOutputTokens: options.maxOutputTokens }
         : {}),
@@ -128,15 +147,20 @@ export async function runLlmCleanupPass(
   if (!Array.isArray(parsed)) {
     return fail('reply-not-an-array', `expected a JSON array, received ${typeof parsed}`);
   }
-  if (parsed.length !== expected) {
+  if (parsed.length !== noisyTexts.length) {
     return fail(
       'reply-length-mismatch',
-      `expected ${expected} elements, received ${parsed.length}`,
+      `expected ${noisyTexts.length} elements, received ${parsed.length}`,
     );
   }
   if (!parsed.every((element): element is string => typeof element === 'string')) {
     return fail('reply-element-not-a-string', 'at least one element was not a string');
   }
 
-  return { ok: true, texts: parsed };
+  const merged = [...texts];
+  for (const [subsetIndex, docIndex] of noisyIndices.entries()) {
+    merged[docIndex] = parsed[subsetIndex]!;
+  }
+
+  return { ok: true, texts: merged };
 }

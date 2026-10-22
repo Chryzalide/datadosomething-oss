@@ -30,7 +30,7 @@ describe('MistralSmallAdapter — rejected credential (AC1)', () => {
 describe('a rejected Nettoyage key still does not fail the conversion (AD-8)', () => {
   it('degrades to rule-only and reports why', async () => {
     const doc = createDocument({ type: 'pdf', pages: 1, provider: 'test' }, [
-      { type: 'paragraph', text: 'Total : 12,50', page: 1 },
+      { type: 'paragraph', text: 'Total | : 12,50', page: 1 },
     ]);
     const adapter = new MistralSmallAdapter({ apiKey: 'bad', fetch: status(401) });
     const result = await cleanDocument(doc, adapter);

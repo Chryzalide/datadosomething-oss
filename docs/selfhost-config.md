@@ -32,12 +32,18 @@ and turn a provider outage into a failed deploy.
 
 ## Nettoyage (verified cleanup)
 
-| Variable            | Default         | Notes                                                                                                                                                                                      |
-| ------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `NETTOYAGE_ENABLED` | **`true`** (on) | Accepts `true/1/yes/on` and `false/0/no/off`; an unrecognized value falls back to the default. Self-host defaults to **on** because you pay your own LLM calls — there is nothing to gate. |
+| Variable               | Default                  | Notes                                                                                                                                                                                      |
+| ---------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `NETTOYAGE_ENABLED`    | **`true`** (on)          | Accepts `true/1/yes/on` and `false/0/no/off`; an unrecognized value falls back to the default. Self-host defaults to **on** because you pay your own LLM calls — there is nothing to gate. |
+| `NETTOYAGE_API_KEY`    | `MISTRAL_API_KEY`        | Optional separate API key for the Nettoyage `/v1/chat/completions` provider. Falls back to `MISTRAL_API_KEY` when unset.                                                                   |
+| `NETTOYAGE_BASE_URL`   | `https://api.mistral.ai` | Optional custom base URL for any OpenAI-compatible `/v1/chat/completions` endpoint (e.g. Ollama, vLLM, LiteLLM, Scaleway, OVHcloud).                                                       |
+| `NETTOYAGE_MODEL`      | `mistral-small-latest`   | Optional model identifier passed to the Nettoyage chat completion endpoint.                                                                                                                |
+| `NETTOYAGE_TIMEOUT_MS` | `30000` (30 s)           | Optional per-request timeout in milliseconds for the Nettoyage LLM call.                                                                                                                   |
 
-Nettoyage needs `MISTRAL_API_KEY`. Enabled without one, it simply does not run
-and the output is served raw — it never fails a conversion.
+Nettoyage needs `NETTOYAGE_API_KEY` (or `MISTRAL_API_KEY`). Enabled without one,
+it simply does not run and the output is served raw — it never fails a
+conversion. You can also override Nettoyage per request by passing
+`nettoyage=true|false` in the multipart `FormData` or query string.
 
 Expect the cleanup to be **rejected** fairly often, and the result served raw
 with an honest notice. That is the design: a deterministic verifier compares the
@@ -45,14 +51,25 @@ cleaned text against the raw one and rejects anything that would add, remove,
 reorder or reword content. A conservative verifier serving raw output is correct
 behaviour, not a bug.
 
+## Custom OCR & Reader endpoints
+
+| Variable            | Default                  | Notes                                                                              |
+| ------------------- | ------------------------ | ---------------------------------------------------------------------------------- |
+| `OCR_BASE_URL`      | `https://api.mistral.ai` | Optional custom base URL for the OCR `/v1/ocr` endpoint.                           |
+| `OCR_MODEL`         | `mistral-ocr-latest`     | Optional model identifier passed to the OCR endpoint.                              |
+| `OCR_TIMEOUT_MS`    | `60000` (60 s)           | Optional per-request timeout in milliseconds for the OCR call.                     |
+| `READER_BASE_URL`   | `https://r.jina.ai`      | Optional custom base URL for the born-digital PDF reader endpoint.                 |
+| `READER_TIMEOUT_MS` | `60000` (60 s)           | Optional per-request timeout in milliseconds for the born-digital PDF reader call. |
+
 ## Server
 
-| Variable           | Default                   | Notes                                                                                                                                                                    |
-| ------------------ | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `PORT`             | `8080`                    | An invalid value falls back to the default, with a warning.                                                                                                              |
-| `HOST`             | `0.0.0.0`                 | `0.0.0.0` is needed for a container port mapping to reach the app. Use `127.0.0.1` to keep it local to the machine.                                                      |
-| `MAX_UPLOAD_BYTES` | `104857600` (100 MB)      | A **stability** bound, not a quota — it stops a pathological upload from exhausting memory. Set to `0` to remove the bound entirely. Enforced while the body streams in. |
-| `CONFIG_DOCS_URL`  | `docs/selfhost-config.md` | Where config errors point. Override it to send your team to your own runbook.                                                                                            |
+| Variable             | Default                   | Notes                                                                                                                                                                    |
+| -------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PORT`               | `8080`                    | An invalid value falls back to the default, with a warning.                                                                                                              |
+| `HOST`               | `0.0.0.0`                 | `0.0.0.0` is needed for a container port mapping to reach the app. Use `127.0.0.1` to keep it local to the machine.                                                      |
+| `MAX_UPLOAD_BYTES`   | `104857600` (100 MB)      | A **stability** bound, not a quota — it stops a pathological upload from exhausting memory. Set to `0` to remove the bound entirely. Enforced while the body streams in. |
+| `CONFIG_DOCS_URL`    | `docs/selfhost-config.md` | Where config errors point. Override it to send your team to your own runbook.                                                                                            |
+| `SELFHOST_API_TOKEN` | Unset (disabled)          | Optional Bearer token protecting `/api/pdftomd` and `/api/pdftojson` using constant-time comparison (`Authorization: Bearer <token>`).                                   |
 
 ## There is no quota, and no authentication
 

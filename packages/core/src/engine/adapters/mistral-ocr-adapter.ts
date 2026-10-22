@@ -21,6 +21,7 @@
  * function, which is synchronous and pure, exactly as AD-16 requires of `core`.
  */
 import { type Block, createDocument, type DocumentModel } from '../../document-model';
+import { fetchWithRetry, type HttpRetryOptions } from '../../http-retry';
 import { markdownToDocument } from '../markdown-to-document';
 import {
   type DocumentEngine,
@@ -40,6 +41,8 @@ export interface MistralOcrConfig {
   model?: string;
   /** Request timeout in ms (default 120s) — OCR is slower than the reader. */
   timeoutMs?: number;
+  /** Bounded retry options on transient HTTP 429/502/503/504, or `false` to disable. */
+  retry?: HttpRetryOptions | false;
 }
 
 interface MistralOcrEnvelope {
@@ -115,18 +118,33 @@ export class MistralOcrAdapter implements DocumentEngine {
       throw new EngineConfigError('No Mistral API key configured. Set MISTRAL_API_KEY.');
     }
     this.apiKey = config.apiKey;
-    this.fetchImpl = config.fetch ?? fetch;
+    const rawFetch = config.fetch ?? fetch;
+    const retryOptions: HttpRetryOptions | false =
+      config.retry === false
+        ? false
+        : {
+            baseDelayMs: config.fetch ? 0 : 250,
+            ...config.retry,
+          };
+    this.fetchImpl = fetchWithRetry(rawFetch, retryOptions);
     this.baseUrl = config.baseUrl ?? 'https://api.mistral.ai/v1/ocr';
     this.model = config.model ?? 'mistral-ocr-latest';
     this.timeoutMs = config.timeoutMs ?? 120_000;
   }
 
   async extract(source: EngineSource): Promise<DocumentModel> {
-    const base64 = Buffer.from(source.bytes).toString('base64');
-    const document =
+    // Zero-copy Buffer view over the existing ArrayBuffer — avoids duplicating a
+    // 100 MB upload (`Buffer.from(uint8Array)` copies bytes) and constructs the
+    // JSON body directly without holding both an intermediate `data:…;base64,…`
+    // string and a `JSON.stringify` copy in memory simultaneously.
+    const view = Buffer.isBuffer(source.bytes)
+      ? source.bytes
+      : Buffer.from(source.bytes.buffer, source.bytes.byteOffset, source.bytes.byteLength);
+    const documentField =
       source.kind === 'image'
-        ? { type: 'image_url', image_url: `data:${source.mimeType};base64,${base64}` }
-        : { type: 'document_url', document_url: `data:application/pdf;base64,${base64}` };
+        ? `"type":"image_url","image_url":"data:${source.mimeType};base64,${view.toString('base64')}"`
+        : `"type":"document_url","document_url":"data:application/pdf;base64,${view.toString('base64')}"`;
+    const body = `{"model":${JSON.stringify(this.model)},"document":{${documentField}},"include_image_base64":false}`;
 
     let response: Response;
     try {
@@ -137,7 +155,7 @@ export class MistralOcrAdapter implements DocumentEngine {
           'Content-Type': 'application/json',
           Accept: 'application/json',
         },
-        body: JSON.stringify({ model: this.model, document, include_image_base64: false }),
+        body,
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (cause) {

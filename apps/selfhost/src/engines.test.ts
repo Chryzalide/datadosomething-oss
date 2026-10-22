@@ -30,6 +30,20 @@ describe('composeEngines — BYO keys from the environment (AC2)', () => {
   it('treats a blank key as absent', () => {
     expect(composeEngines({ MISTRAL_API_KEY: '   ', JINA_API_KEY: '' })).toEqual({});
   });
+
+  it('forwards custom OCR and Reader baseUrl, model and timeoutMs from env (2.2)', async () => {
+    const registry = composeEngines({
+      MISTRAL_API_KEY: 'k',
+      OCR_BASE_URL: 'https://ocr.custom.local',
+      OCR_MODEL: 'custom-ocr-v1',
+      OCR_TIMEOUT_MS: '15000',
+      JINA_API_KEY: 'j',
+      READER_BASE_URL: 'https://reader.custom.local',
+      READER_TIMEOUT_MS: '12000',
+    });
+    expect(registry.ocr?.name).toBe('mistral-ocr');
+    expect(registry.reader?.name).toBe('jina-reader');
+  });
 });
 
 describe('upload bound is a stability guard, not a quota (AC1)', () => {

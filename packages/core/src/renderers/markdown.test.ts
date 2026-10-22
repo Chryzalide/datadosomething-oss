@@ -50,6 +50,27 @@ describe('renderMarkdown — paragraphs & lists (AC2)', () => {
   it('drops an empty list (no stray structure)', () => {
     expect(renderMarkdown(doc([{ type: 'list', ordered: true, items: [], page: 1 }]))).toBe('');
   });
+
+  it('renders a code block with preserved newlines and no inline escaping', () => {
+    expect(
+      renderMarkdown(
+        doc([
+          {
+            type: 'code',
+            language: 'python',
+            text: 'def f(x):\n    return x * 2 # [a|b]',
+            page: 1,
+          },
+        ]),
+      ),
+    ).toBe('```python\ndef f(x):\n    return x * 2 # [a|b]\n```');
+  });
+
+  it('widens code fence when code contains triple backticks', () => {
+    expect(renderMarkdown(doc([{ type: 'code', text: '```js\nx\n```', page: 1 }]))).toBe(
+      '````\n```js\nx\n```\n````',
+    );
+  });
 });
 
 describe('renderMarkdown — tables (AC2)', () => {

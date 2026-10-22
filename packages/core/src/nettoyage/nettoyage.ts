@@ -19,11 +19,16 @@
  * English config strings in `core` as latent i18n debt; this does not add more.
  */
 import type { DocumentModel } from '../document-model';
-import { withTexts } from './document-texts';
+import { flattenTexts, withTexts } from './document-texts';
 import type { LlmProvider } from './llm-port';
 import { type LlmPassFailure, type LlmPassOptions, runLlmCleanupPass } from './llm-pass';
 import { ruleCleanDocument } from './rule-pass';
-import { type NettoyageRejectionReason, verifyCleanedDocument } from './verifier';
+import {
+  type NettoyageRejectionReason,
+  type NettoyageSlotRejection,
+  reconcileCleanedTexts,
+  verifyCleanedDocument,
+} from './verifier';
 
 /** What actually ran. `'cleaned'` means stage 2 ran AND stage 3 accepted it. */
 export type NettoyageOutcome = 'cleaned' | 'rule-only';
@@ -32,8 +37,18 @@ export interface NettoyageResult {
   /** The document to serve. Always at least rule-clean (stage 1). */
   document: DocumentModel;
   outcome: NettoyageOutcome;
-  /** Set iff the verifier rejected the candidate — `outcome` is `'rule-only'`. */
-  rejection?: { reason: NettoyageRejectionReason; detail: string };
+  /**
+   * Set when the verifier rejected one or more candidate text values.
+   * When all noisy slots were rejected, `outcome` is `'rule-only'`; when only a
+   * subset was rejected, accepted slots stay cleaned (`outcome: 'cleaned'`) and
+   * rejected slots fall back to `ruleCleanText(raw)` with details exposed here.
+   */
+  rejection?: {
+    reason: NettoyageRejectionReason;
+    detail: string;
+    rejectedIndices?: number[];
+    slots?: NettoyageSlotRejection[];
+  };
   /** Set iff stage 2 produced no usable candidate — `outcome` is `'rule-only'`. */
   failure?: { reason: LlmPassFailure; detail: string };
 }
@@ -77,18 +92,54 @@ export async function cleanDocument(
       };
     }
 
-    // Re-apply stage 1 to the candidate, so the served text is rule-clean
-    // whatever the model returned, then rebuild the document around the SAME
-    // structure.
-    const candidate = ruleCleanDocument(withTexts(ruleOnly, pass.texts));
+    if (pass.skipped) {
+      return { document: ruleOnly, outcome: 'cleaned' };
+    }
 
-    // Stage 3.
+    // Stage 3: granular per-string verification and reconciliation.
+    const rawTexts = flattenTexts(ruleOnly);
+    const reconciled = reconcileCleanedTexts(rawTexts, pass.texts);
+
+    // If every noisy slot was rejected, the entire candidate falls back to rule-only.
+    if (reconciled.rejections.length > 0 && reconciled.acceptedNoisyCount === 0) {
+      const first = reconciled.rejections[0]!;
+      return {
+        document: ruleOnly,
+        outcome: 'rule-only',
+        rejection: {
+          reason: first.reason,
+          detail: first.detail,
+          rejectedIndices: reconciled.rejections.map((r) => r.index),
+          slots: reconciled.rejections,
+        },
+      };
+    }
+
+    // Rebuild the document around the SAME structure using the reconciled texts
+    // (accepted candidates + rule-clean raw fallback for any rejected slot).
+    const candidate = ruleCleanDocument(withTexts(ruleOnly, reconciled.texts));
+
+    // Independent structural + full-document audit (belt-and-braces).
     const verdict = verifyCleanedDocument(ruleOnly, candidate);
     if (!verdict.accepted) {
       return {
         document: ruleOnly,
         outcome: 'rule-only',
         rejection: { reason: verdict.reason, detail: verdict.detail },
+      };
+    }
+
+    if (reconciled.rejections.length > 0) {
+      const first = reconciled.rejections[0]!;
+      return {
+        document: candidate,
+        outcome: 'cleaned',
+        rejection: {
+          reason: first.reason,
+          detail: first.detail,
+          rejectedIndices: reconciled.rejections.map((r) => r.index),
+          slots: reconciled.rejections,
+        },
       };
     }
 

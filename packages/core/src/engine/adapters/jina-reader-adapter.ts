@@ -9,7 +9,9 @@
  * Keys are injected (BYO-keys); `core` never reads process.env.
  */
 import type { DocumentModel } from '../../document-model';
+import { fetchWithRetry, type HttpRetryOptions } from '../../http-retry';
 import { markdownToDocument } from '../markdown-to-document';
+import { countPdfPages } from '../page-count';
 import {
   type DocumentEngine,
   EngineAuthError,
@@ -26,6 +28,8 @@ export interface JinaReaderConfig {
   baseUrl?: string;
   /** Request timeout in ms (default 60s) — bounds a hung Jina response. */
   timeoutMs?: number;
+  /** Bounded retry options on transient HTTP 429/502/503/504, or `false` to disable. */
+  retry?: HttpRetryOptions | false;
 }
 
 interface JinaEnvelope {
@@ -45,7 +49,15 @@ export class JinaReaderAdapter implements DocumentEngine {
       throw new EngineConfigError('No Jina API key configured. Set JINA_API_KEY.');
     }
     this.apiKey = config.apiKey;
-    this.fetchImpl = config.fetch ?? fetch;
+    const rawFetch = config.fetch ?? fetch;
+    const retryOptions: HttpRetryOptions | false =
+      config.retry === false
+        ? false
+        : {
+            baseDelayMs: config.fetch ? 0 : 250,
+            ...config.retry,
+          };
+    this.fetchImpl = fetchWithRetry(rawFetch, retryOptions);
     this.baseUrl = config.baseUrl ?? 'https://r.jina.ai/';
     this.timeoutMs = config.timeoutMs ?? 60_000;
   }
@@ -105,7 +117,14 @@ export class JinaReaderAdapter implements DocumentEngine {
       throw new Error('Jina Reader returned empty content for this PDF.');
     }
 
-    // Jina Markdown has no page info in V1 → source.pages = 1.
-    return markdownToDocument(markdown, { type: 'pdf', pages: 1, provider: this.name });
+    let pages = 1;
+    if (source.kind === 'pdf') {
+      try {
+        pages = await countPdfPages(source.bytes);
+      } catch {
+        pages = 1;
+      }
+    }
+    return markdownToDocument(markdown, { type: 'pdf', pages, provider: this.name });
   }
 }

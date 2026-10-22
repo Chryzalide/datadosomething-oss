@@ -1,9 +1,12 @@
 {
   "name": "selfhost",
-  "version": "0.0.0",
+  "version": "1.1.0",
   "description": "OSS thin app over the pure core (Apache-2.0): thin API + minimal UI, BYO-keys, no quota, Nettoyage on by default. Depends on @datadosomething/core only - never on the hub.",
   "license": "Apache-2.0",
   "type": "module",
+  "bin": {
+    "datadosomething": "./dist/cli.js"
+  },
   "scripts": {
     "build": "tsc -b tsconfig.json && node ../../scripts/add-esm-extensions.mjs dist",
     "start": "node dist/main.js",

@@ -100,6 +100,40 @@ export function ruleCleanText(value: string): string {
   return value.replace(ARTIFACTS_G, '').replace(WHITESPACE_RUN_G, ' ').trim();
 }
 
+const NON_ASCII_SPACE_G = /[\u000b\u000c\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]/gu;
+const LINE_BREAK_G = /\r\n?|[\u2028\u2029]/gu;
+const SUBLIST_LINE_RE = /^(\s+)([-*+]|\d+\.)\s+(.*)$/;
+
+/**
+ * Clean a `code` block's text while preserving line breaks and leading indentation.
+ * Satisfies the same Stage 1 non-alteration invariant: `strip(ruleCleanCodeText(s)) === strip(s)`.
+ */
+export function ruleCleanCodeText(value: string): string {
+  return value
+    .replace(ARTIFACTS_G, '')
+    .replace(LINE_BREAK_G, '\n')
+    .replace(NON_ASCII_SPACE_G, ' ')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+$/g, ''))
+    .join('\n')
+    .replace(/^\n+|\n+$/g, '');
+}
+
+function ruleCleanListItem(value: string): string {
+  const normalized = value.replace(ARTIFACTS_G, '').replace(LINE_BREAK_G, '\n');
+  const lines = normalized.split('\n');
+  if (lines.length > 1 && lines.slice(1).every((line) => SUBLIST_LINE_RE.test(line))) {
+    const head = ruleCleanText(lines[0] ?? '');
+    const subLines = lines.slice(1).map((line) => {
+      const match = SUBLIST_LINE_RE.exec(line);
+      if (!match) return ruleCleanText(line);
+      return `${match[1]}${match[2]} ${ruleCleanText(match[3] ?? '')}`;
+    });
+    return [head, ...subLines].join('\n');
+  }
+  return ruleCleanText(value);
+}
+
 /** Copy a block's non-text fields, sharing no object with the input model. */
 function copyBase(block: Block): { page: number; bbox?: BBox; confidence?: number } {
   const base: { page: number; bbox?: BBox; confidence?: number } = { page: block.page };
@@ -129,13 +163,20 @@ function ruleCleanBlock(block: Block): Block {
       return {
         type: 'list',
         ordered: block.ordered,
-        items: block.items.map((item) => ruleCleanText(item)),
+        items: block.items.map((item) => ruleCleanListItem(item)),
         ...copyBase(block),
       };
     case 'table':
       return {
         type: 'table',
         rows: block.rows.map((row) => row.map((cell) => ruleCleanText(cell))),
+        ...copyBase(block),
+      };
+    case 'code':
+      return {
+        type: 'code',
+        ...(block.language !== undefined ? { language: block.language } : {}),
+        text: ruleCleanCodeText(block.text),
         ...copyBase(block),
       };
     default: {

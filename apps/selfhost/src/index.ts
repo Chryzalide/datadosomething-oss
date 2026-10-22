@@ -15,7 +15,14 @@ export function describeSelfhost(): string {
 }
 
 export { createSelfhostServer, type SelfhostServerOptions } from './server';
-export { convert, type ConversionOutcome, type OutputKind } from './convert';
+export {
+  convert,
+  type ConversionOutcome,
+  type ConvertOptions,
+  type OutputKind,
+  parsePageSelection,
+} from './convert';
+export { type CliIo, runCli } from './cli';
 export { composeEngines } from './engines';
 export {
   type ConfigDiagnostic,

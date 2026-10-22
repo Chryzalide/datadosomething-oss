@@ -70,6 +70,7 @@ export function configDiagnostics(
 ): ConfigDiagnostic[] {
   const mistral = env.MISTRAL_API_KEY?.trim();
   const jina = env.JINA_API_KEY?.trim();
+  const nettoyageKey = env.NETTOYAGE_API_KEY?.trim() || mistral;
   const diagnostics: ConfigDiagnostic[] = [];
 
   if (!mistral && !jina) {
@@ -104,7 +105,7 @@ export function configDiagnostics(
     });
   }
 
-  if (selfhostNettoyageEnabled(env) && !mistral) {
+  if (selfhostNettoyageEnabled(env) && !nettoyageKey) {
     diagnostics.push({
       level: 'notice',
       envVar: 'MISTRAL_API_KEY',

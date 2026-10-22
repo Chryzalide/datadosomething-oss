@@ -21,7 +21,7 @@ describe('renderJson — versioned contract (AC1)', () => {
     expect(out.source).toEqual({ type: 'image', pages: 3, provider: 'engine-x' });
   });
 
-  it('emits all four block types, each with type + page', () => {
+  it('emits all block types, each with type + page', () => {
     const out = parse(
       doc([
         { type: 'heading', level: 2, text: 'Title', page: 1 },
@@ -35,9 +35,16 @@ describe('renderJson — versioned contract (AC1)', () => {
           ],
           page: 3,
         },
+        { type: 'code', language: 'ts', text: 'const x = 1;\nconst y = 2;', page: 3 },
       ]),
     );
-    expect(out.blocks.map((b) => b.type)).toEqual(['heading', 'paragraph', 'list', 'table']);
+    expect(out.blocks.map((b) => b.type)).toEqual([
+      'heading',
+      'paragraph',
+      'list',
+      'table',
+      'code',
+    ]);
     for (const b of out.blocks) {
       expect(typeof b.type).toBe('string');
       expect(typeof b.page).toBe('number');
@@ -55,6 +62,12 @@ describe('renderJson — versioned contract (AC1)', () => {
         ['h1', 'h2'],
         ['a', 'b'],
       ],
+      page: 3,
+    });
+    expect(out.blocks[4]).toMatchObject({
+      type: 'code',
+      language: 'ts',
+      text: 'const x = 1;\nconst y = 2;',
       page: 3,
     });
   });
@@ -243,6 +256,7 @@ describe('renderJson — validity, determinism, schema (AC3)', () => {
       PDFTOJSON_JSON_SCHEMA.$defs.paragraph,
       PDFTOJSON_JSON_SCHEMA.$defs.list,
       PDFTOJSON_JSON_SCHEMA.$defs.table,
+      PDFTOJSON_JSON_SCHEMA.$defs.code,
     ]) {
       expect(def.required).not.toContain('bbox');
       expect(def.required).not.toContain('confidence');

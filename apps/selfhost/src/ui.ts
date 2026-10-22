@@ -54,6 +54,26 @@ label { display: block; font-weight: 600; margin-bottom: 0.35rem; }
 .radio { display: flex; gap: 1.25rem; }
 .radio label { display: flex; gap: 0.4rem; align-items: center; font-weight: 500; margin: 0; }
 input[type="file"] { width: 100%; font: inherit; }
+input[type="text"] {
+  width: 100%; font: inherit; padding: 0.45rem 0.65rem;
+  border: var(--border-width) solid var(--outline); border-radius: var(--radius);
+  background: var(--surface); color: var(--ink);
+}
+.dropzone {
+  border: var(--border-width) dashed var(--outline); border-radius: var(--radius);
+  padding: 0.85rem; margin-bottom: 1rem; background: var(--paper);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.dropzone.dragover {
+  border-color: var(--cobalt); background: #eef1ff;
+}
+.options-row {
+  display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; margin-bottom: 1rem;
+}
+.options-row .field { flex: 1 1 14rem; }
+.checkbox {
+  display: flex; gap: 0.45rem; align-items: center; font-weight: 500; margin: 0 0 1rem;
+}
 button {
   font: inherit; font-weight: 700; cursor: pointer;
   background: var(--cobalt); color: var(--on-cobalt);
@@ -67,31 +87,43 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .alert { border-left: var(--border-width) solid var(--coral); padding: 0.6rem 0.8rem; margin-top: 1rem; }
 .notice { border-left: var(--border-width) solid var(--mint); padding: 0.6rem 0.8rem; margin-bottom: 0.8rem; }
 .notice.raw { border-left-color: var(--coral); }
+.source-meta {
+  font-family: var(--mono); font-size: 0.8rem; color: var(--muted); margin: 0 0 0.8rem;
+}
 pre {
   font-family: var(--mono); font-size: 0.85rem; white-space: pre-wrap; word-break: break-word;
   background: var(--paper); border: var(--border-width) solid var(--outline);
   border-radius: var(--radius); padding: 0.9rem; max-height: 28rem; overflow: auto; margin: 0;
 }
 .hidden { display: none; }
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
 footer { color: var(--muted); font-size: 0.85rem; margin-top: 2rem; }
 `;
 
 // Inline module script. No bundler, no framework, no external request.
 const SCRIPT = `
 const form = document.getElementById('convert-form');
+const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('file');
+const pagesInput = document.getElementById('pages');
+const nettoyageInput = document.getElementById('nettoyage');
 const cta = document.getElementById('cta');
 const errorBox = document.getElementById('error');
 const errorText = document.getElementById('error-text');
 const statusBox = document.getElementById('status');
 const result = document.getElementById('result');
 const noticeBox = document.getElementById('notice');
+const sourceMetaBox = document.getElementById('source-meta');
 const output = document.getElementById('output');
 const copyBtn = document.getElementById('copy');
 const downloadBtn = document.getElementById('download');
 
 let sortie = '';
 let extension = 'md';
+let downloadStem = 'document';
 
 const NOTICES = {
   cleaned: ['notice', 'Cleaned - OCR noise removed, wording unchanged.'],
@@ -104,16 +136,43 @@ const ENDPOINTS = { markdown: '/api/pdftomd', json: '/api/pdftojson' };
 
 function show(el, on) { el.classList.toggle('hidden', !on); }
 
+function stemOf(filename) {
+  if (!filename || typeof filename !== 'string') return 'document';
+  const base = filename.replace(/^.*[\\\\/]/, '').replace(/\\.[^/.]+$/, '').trim();
+  return base || 'document';
+}
+
 function reset() {
   errorText.textContent = '';
+  sourceMetaBox.textContent = '';
   show(errorBox, false);
   show(result, false);
   show(noticeBox, false);
+  show(sourceMetaBox, false);
 }
 
 fileInput.addEventListener('change', () => {
   reset();
   cta.disabled = fileInput.files.length === 0;
+});
+
+dropzone.addEventListener('dragover', (event) => {
+  event.preventDefault();
+  dropzone.classList.add('dragover');
+});
+
+dropzone.addEventListener('dragleave', () => {
+  dropzone.classList.remove('dragover');
+});
+
+dropzone.addEventListener('drop', (event) => {
+  event.preventDefault();
+  dropzone.classList.remove('dragover');
+  if (event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files.length > 0) {
+    fileInput.files = event.dataTransfer.files;
+    reset();
+    cta.disabled = fileInput.files.length === 0;
+  }
 });
 
 form.addEventListener('submit', async (event) => {
@@ -123,6 +182,7 @@ form.addEventListener('submit', async (event) => {
 
   const kind = form.querySelector('input[name="kind"]:checked').value;
   extension = kind === 'json' ? 'json' : 'md';
+  downloadStem = stemOf(file.name);
 
   reset();
   cta.disabled = true;
@@ -131,6 +191,10 @@ form.addEventListener('submit', async (event) => {
   try {
     const body = new FormData();
     body.append('file', file);
+    body.append('nettoyage', nettoyageInput.checked ? 'true' : 'false');
+    const pagesVal = pagesInput.value.trim();
+    if (pagesVal) body.append('pages', pagesVal);
+
     const response = await fetch(ENDPOINTS[kind], { method: 'POST', body });
     const data = await response.json().catch(() => ({}));
     const value = kind === 'json' ? data.json : data.markdown;
@@ -146,6 +210,12 @@ form.addEventListener('submit', async (event) => {
 
     sortie = value;
     output.textContent = value;
+    if (data.source && typeof data.source === 'object') {
+      const pageCount = Number(data.source.pages) || 0;
+      const pageLabel = pageCount === 1 ? '1 page' : pageCount + ' pages';
+      sourceMetaBox.textContent = data.source.type + ' · ' + pageLabel + ' · ' + data.source.provider;
+      show(sourceMetaBox, true);
+    }
     const outcome = data.nettoyage && data.nettoyage.outcome;
     const notice = NOTICES[outcome];
     if (notice) {
@@ -178,7 +248,7 @@ downloadBtn.addEventListener('click', () => {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = 'document.' + extension;
+  anchor.download = downloadStem + '.' + extension;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
@@ -203,8 +273,10 @@ export function renderPage(): string {
   <p class="lede">Self-hosted. Your keys, your infrastructure, no quota, nothing stored.</p>
 
   <form class="card" id="convert-form">
-    <label for="file">PDF or scanned image (PNG/JPG)</label>
-    <input type="file" id="file" name="file" accept="${UPLOAD_ACCEPT_ATTR}" required>
+    <div class="dropzone" id="dropzone">
+      <label for="file">PDF or scanned image (PNG/JPG)</label>
+      <input type="file" id="file" name="file" accept="${UPLOAD_ACCEPT_ATTR}" required>
+    </div>
 
     <fieldset>
       <legend>Output</legend>
@@ -213,6 +285,18 @@ export function renderPage(): string {
         <label><input type="radio" name="kind" value="json"> Structured JSON (.json)</label>
       </div>
     </fieldset>
+
+    <div class="options-row">
+      <div class="field">
+        <label for="pages">Pages (optional, e.g. 1-5)</label>
+        <input type="text" id="pages" name="pages" placeholder="All pages (e.g. 1-5 or 1,3-5)">
+      </div>
+    </div>
+
+    <label class="checkbox" for="nettoyage">
+      <input type="checkbox" id="nettoyage" name="nettoyage" checked>
+      Verified Nettoyage (remove OCR noise)
+    </label>
 
     <button type="submit" id="cta" disabled>Convert</button>
 
@@ -223,6 +307,7 @@ export function renderPage(): string {
   </form>
 
   <section class="card hidden" id="result" aria-label="Conversion result">
+    <p class="source-meta hidden" id="source-meta"></p>
     <p class="notice hidden" id="notice" role="status"></p>
     <pre id="output"></pre>
     <div class="actions">

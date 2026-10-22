@@ -38,20 +38,24 @@ describe('markdownToDocument (AC1/AC2)', () => {
     expect(doc.blocks).toEqual([{ type: 'paragraph', text: 'a b c', page: 1 }]);
   });
 
-  it('preserves blockquote/code content as paragraphs; drops structural-only tokens', () => {
-    const doc = markdownToDocument('```\ncode text\n```\n\n> quoted\n\n---\n\nreal.', src);
+  it('preserves code blocks with language and newlines, blockquotes as paragraphs; drops structural-only tokens', () => {
+    const doc = markdownToDocument(
+      '```ts\nconst x = 1;\nconst y = 2;\n```\n\n> quoted\n\n---\n\nreal.',
+      src,
+    );
     expect(doc.blocks).toEqual([
-      { type: 'paragraph', text: 'code text', page: 1 },
+      { type: 'code', language: 'ts', text: 'const x = 1;\nconst y = 2;', page: 1 },
       { type: 'paragraph', text: 'quoted', page: 1 },
       { type: 'paragraph', text: 'real.', page: 1 },
     ]);
   });
 
-  it('flattens nested sub-list items into the parent item (no content dropped)', () => {
+  it('preserves nested sub-list items with indented markers (no content or hierarchy dropped)', () => {
     const doc = markdownToDocument('- a\n  - a1\n  - a2\n- b', src);
     expect(doc.blocks).toEqual([
-      { type: 'list', ordered: false, items: ['a a1 a2', 'b'], page: 1 },
+      { type: 'list', ordered: false, items: ['a\n  - a1\n  - a2', 'b'], page: 1 },
     ]);
+    expect(renderMarkdown(doc)).toBe('- a\n  - a1\n  - a2\n- b');
   });
 
   it('space-joins a loose multi-paragraph list item (no run-together text)', () => {

@@ -34,30 +34,50 @@ function inlineText(tokens: Token[] | undefined): string {
 }
 
 /**
- * Flatten a list item's block tokens to a single plain-text string: loose items
- * (multiple paragraphs) are space-joined, and a nested list's items are
- * flattened in (the flat model has no nesting — preserve the text, not the
- * shape).
+ * Flatten a list item's block tokens to a plain-text string: loose items
+ * (multiple paragraphs) are space-joined, while nested sub-lists are preserved
+ * as indented sub-list lines (`\n  - item` or `\n  1. item`) so list hierarchy
+ * is retained across Markdown and JSON projections without dropping content.
  */
-function itemText(tokens: Token[] | undefined): string {
+function itemText(tokens: Token[] | undefined, depth = 1): string {
   if (!tokens) return '';
-  const parts: string[] = [];
+  const inlineParts: string[] = [];
+  const subListLines: string[] = [];
+  const indent = '  '.repeat(depth);
+
   for (const token of tokens) {
     const node = token as {
       type: string;
       text?: string;
+      ordered?: boolean;
       tokens?: Token[];
       items?: Tokens.ListItem[];
     };
+    if (node.type === 'html' || node.type === 'space' || node.type === 'hr') {
+      continue;
+    }
     if (node.type === 'list' && Array.isArray(node.items)) {
-      for (const sub of node.items) parts.push(itemText(sub.tokens));
+      node.items.forEach((sub, idx) => {
+        const subText = itemText(sub.tokens, depth + 1);
+        if (subText.length > 0) {
+          const marker = node.ordered ? `${idx + 1}.` : '-';
+          subListLines.push(`${indent}${marker} ${subText}`);
+        }
+      });
+    } else if (node.type === 'blockquote' && Array.isArray(node.tokens)) {
+      const quoted = itemText(node.tokens, depth);
+      if (quoted.length > 0) inlineParts.push(quoted);
     } else if (Array.isArray(node.tokens)) {
-      parts.push(inlineText(node.tokens));
-    } else if (typeof node.text === 'string') {
-      parts.push(node.text);
+      const text = inlineText(node.tokens);
+      if (text.length > 0) inlineParts.push(text);
+    } else if (typeof node.text === 'string' && node.text.length > 0) {
+      inlineParts.push(node.text);
     }
   }
-  return parts.filter((part) => part.length > 0).join(' ');
+
+  const head = inlineParts.join(' ');
+  if (subListLines.length === 0) return head;
+  return head.length > 0 ? `${head}\n${subListLines.join('\n')}` : subListLines.join('\n');
 }
 
 export function markdownToDocument(markdown: string, source: DocumentSource): DocumentModel {
@@ -81,10 +101,16 @@ export function markdownToDocument(markdown: string, source: DocumentSource): Do
         // No blockquote block in the closed set — preserve its text as a paragraph.
         blocks.push({ type: 'paragraph', text: itemText(token.tokens) || token.text, page });
         break;
-      case 'code':
-        // No code block in the closed set — preserve the code text as a paragraph.
-        blocks.push({ type: 'paragraph', text: token.text, page });
+      case 'code': {
+        const language = typeof token.lang === 'string' ? token.lang.trim() : '';
+        blocks.push({
+          type: 'code',
+          ...(language ? { language } : {}),
+          text: token.text,
+          page,
+        });
         break;
+      }
       case 'list':
         blocks.push({
           type: 'list',

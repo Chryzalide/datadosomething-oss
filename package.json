@@ -1,12 +1,12 @@
 {
   "name": "datadosomething-selfhost",
-  "version": "0.0.0",
+  "version": "1.1.0",
   "private": false,
   "description": "datadosomething self-host — the Apache-2.0 distribution: the pure engine (packages/core) and the thin BYO-keys app over it (apps/selfhost). PDF to clean Markdown or structured JSON, on your own infrastructure, with your own provider keys and no quota.",
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.34.5",
   "engines": {
-    "node": ">=24 <25"
+    "node": ">=24.22.1 <25"
   },
   "type": "module",
   "devDependencies": {

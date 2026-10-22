@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { EngineRegistry } from '@datadosomething/core';
 import { convert, type OutputKind } from './convert';
@@ -95,7 +96,14 @@ async function readBody(
     if (!overBound) chunks.push(buf);
   }
 
-  return overBound ? { ok: false } : { ok: true, body: Buffer.concat(chunks) };
+  if (overBound) return { ok: false };
+  const body =
+    chunks.length === 0
+      ? Buffer.alloc(0)
+      : chunks.length === 1
+        ? chunks[0]!
+        : Buffer.concat(chunks, total);
+  return { ok: true, body };
 }
 
 /**
@@ -110,10 +118,13 @@ function toRequest(req: IncomingMessage, body: Buffer): Request {
     if (Array.isArray(value)) for (const item of value) headers.append(name, item);
     else headers.set(name, value);
   }
+  // Zero-copy view over the underlying ArrayBuffer — avoids duplicating a 100 MB
+  // upload buffer before multipart parsing (`new Uint8Array(buffer)` copies).
+  const view = new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
   return new Request(`http://localhost${req.url ?? '/'}`, {
     method: req.method ?? 'GET',
     headers,
-    body: new Uint8Array(body),
+    body: view as Uint8Array<ArrayBuffer>,
   });
 }
 
@@ -122,6 +133,17 @@ const ENDPOINTS: Record<string, OutputKind> = {
   '/api/pdftojson': 'json',
 };
 
+function verifyBearerToken(req: IncomingMessage, expectedToken: string): boolean {
+  const auth = req.headers.authorization;
+  if (typeof auth !== 'string') return false;
+  const match = /^Bearer\s+(.+)$/i.exec(auth.trim());
+  if (!match || !match[1]) return false;
+  const provided = Buffer.from(match[1].trim(), 'utf8');
+  const expected = Buffer.from(expectedToken, 'utf8');
+  if (provided.length !== expected.length) return false;
+  return timingSafeEqual(provided, expected);
+}
+
 export function createSelfhostServer(options: SelfhostServerOptions = {}): Server {
   const env = options.env ?? process.env;
   // Composed once at startup, exactly as the AC describes ("when the app starts").
@@ -129,8 +151,8 @@ export function createSelfhostServer(options: SelfhostServerOptions = {}): Serve
 
   return createServer((req, res) => {
     void (async () => {
-      // Strip any query string; this app has no query parameters.
-      const pathname = (req.url ?? '/').split('?')[0] ?? '/';
+      const parsedUrl = new URL(req.url ?? '/', 'http://localhost');
+      const pathname = parsedUrl.pathname;
       const method = req.method ?? 'GET';
 
       try {
@@ -151,6 +173,22 @@ export function createSelfhostServer(options: SelfhostServerOptions = {}): Serve
             res.end();
             return;
           }
+
+          const requiredToken = env.SELFHOST_API_TOKEN?.trim();
+          if (requiredToken && !verifyBearerToken(req, requiredToken)) {
+            const payload = JSON.stringify({
+              error: 'Unauthorized — provide a valid Bearer token in the Authorization header.',
+            });
+            res.writeHead(401, {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Content-Length': Buffer.byteLength(payload),
+              'WWW-Authenticate': 'Bearer',
+              ...NO_STORE,
+            });
+            res.end(payload);
+            return;
+          }
+
           const limit = maxUploadBytes(env);
           const read = await readBody(req, limit);
           if (!read.ok) {
@@ -169,7 +207,14 @@ export function createSelfhostServer(options: SelfhostServerOptions = {}): Serve
             });
             return;
           }
-          const outcome = await convert(kind, form, { engines, env });
+          const queryNettoyage = parsedUrl.searchParams.get('nettoyage') ?? undefined;
+          const queryPages = parsedUrl.searchParams.get('pages') ?? undefined;
+          const outcome = await convert(kind, form, {
+            engines,
+            env,
+            ...(queryNettoyage !== undefined ? { nettoyage: queryNettoyage } : {}),
+            ...(queryPages !== undefined ? { pages: queryPages } : {}),
+          });
           sendJson(res, outcome.status, outcome.body);
           return;
         }

@@ -305,6 +305,7 @@ describe('ruleCleanDocument — structure is immutable (AC2, AD-8)', () => {
           switch (b.type) {
             case 'heading':
             case 'paragraph':
+            case 'code':
               return b.text;
             case 'list':
               return b.items.join('');
@@ -314,5 +315,24 @@ describe('ruleCleanDocument — structure is immutable (AC2, AD-8)', () => {
         })
         .join('');
     expect(strip(textOf(out))).toBe(strip(textOf(input)));
+  });
+
+  it('preserves line breaks and indentation inside code blocks while removing stage-1 artifacts', () => {
+    const out = ruleCleanDocument(
+      doc([
+        {
+          type: 'code',
+          language: 'ts',
+          text: `${BOM}function test() {\r\n  return ${ZWSP}42;  \r\n}\n`,
+          page: 1,
+        },
+      ]),
+    );
+    expect(out.blocks[0]).toEqual({
+      type: 'code',
+      language: 'ts',
+      text: 'function test() {\n  return 42;\n}',
+      page: 1,
+    });
   });
 });

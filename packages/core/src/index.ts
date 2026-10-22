@@ -13,9 +13,12 @@
 /** Stable package identity, useful for smoke-checking the in-process wiring. */
 export const CORE_PACKAGE = '@datadosomething/core' as const;
 
-/** Placeholder engine version. Real capabilities land in later stories. */
+/** Current SemVer release of `@datadosomething/core`, kept in lockstep with `package.json`. */
+export const CORE_VERSION = '1.1.0' as const;
+
+/** Current SemVer release of the engine. */
 export function coreVersion(): string {
-  return '0.0.0';
+  return CORE_VERSION;
 }
 
 // The canonical Document Model (AD-3 / AD-4) and its renderers.
@@ -25,6 +28,7 @@ export {
   type BBox,
   type Block,
   type BlockType,
+  type CodeBlock,
   type DocumentModel,
   type DocumentSource,
   type HeadingBlock,
@@ -39,6 +43,7 @@ export {
   renderJson,
   type JsonBBox,
   type JsonBlock,
+  type JsonCodeBlock,
   type JsonDocument,
   type JsonHeadingBlock,
   type JsonListBlock,
@@ -61,10 +66,20 @@ export {
   type PdfSource,
 } from './engine/port';
 export { EngineRouter, type EngineRegistry } from './engine/router';
-export { probeTextLayer, type TextLayerVerdict } from './engine/text-layer-probe';
+export {
+  inspectPdfTextLayer,
+  type PdfTextLayerInspection,
+  probeTextLayer,
+  type TextLayerVerdict,
+} from './engine/text-layer-probe';
 export { countPdfPages, PageCountError } from './engine/page-count';
 export { markdownToDocument } from './engine/markdown-to-document';
 export { JinaReaderAdapter, type JinaReaderConfig } from './engine/adapters/jina-reader-adapter';
+export {
+  LOCAL_PDF_READER_PROVIDER,
+  LocalPdfReaderAdapter,
+  type LocalPdfReaderConfig,
+} from './engine/adapters/local-pdf-reader-adapter';
 export {
   MISTRAL_OCR_PROVIDER,
   MistralOcrAdapter,
@@ -73,6 +88,13 @@ export {
   // (Story 5.8, AD-16). Pure and synchronous; the async orchestration is not here.
   mistralOcrEnvelopeToDocument,
 } from './engine/adapters/mistral-ocr-adapter';
+export {
+  computeRetryDelayMs,
+  fetchWithRetry,
+  type HttpRetryOptions,
+  isRetryableStatus,
+  parseRetryAfterMs,
+} from './http-retry';
 export { convertToDocument, convertToJson, convertToMarkdown } from './pipeline';
 
 // Nettoyage: the LLM port (AD-2) + stage 1, the deterministic rule pass (AD-8).
@@ -87,6 +109,7 @@ export {
 export {
   NETTOYAGE_WHITESPACE,
   OCR_ARTIFACT_CHARS,
+  ruleCleanCodeText,
   ruleCleanDocument,
   ruleCleanText,
 } from './nettoyage/rule-pass';
@@ -106,8 +129,11 @@ export {
 export {
   NETTOYAGE_REMOVABLE_NOISE,
   type NettoyageRejectionReason,
+  type NettoyageSlotRejection,
   type NettoyageVerdict,
   protectedProjection,
+  reconcileCleanedTexts,
+  type ReconciledTextsResult,
   verifyCleanedDocument,
   verifyCleanedText,
 } from './nettoyage/verifier';

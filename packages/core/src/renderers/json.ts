@@ -54,9 +54,15 @@ export interface JsonTableBlock extends JsonBlockBase {
   type: 'table';
   rows: string[][];
 }
+export interface JsonCodeBlock extends JsonBlockBase {
+  type: 'code';
+  language?: string;
+  text: string;
+}
 
 /** A public block is exactly one of the closed set (discriminated by `type`). */
-export type JsonBlock = JsonHeadingBlock | JsonParagraphBlock | JsonListBlock | JsonTableBlock;
+export type JsonBlock =
+  JsonHeadingBlock | JsonParagraphBlock | JsonListBlock | JsonTableBlock | JsonCodeBlock;
 
 /** Document-level provenance, public shape. */
 export interface JsonSource {
@@ -150,6 +156,16 @@ function projectBlock(block: Block): JsonBlock {
         type: 'table',
         // Deep-copy rows so the projection shares no array with the input model.
         rows: block.rows.map((row) => [...row]),
+        page: pageOf(block.page),
+        ...optionalFields(block),
+      };
+    case 'code':
+      return {
+        type: 'code',
+        ...(block.language !== undefined && block.language !== ''
+          ? { language: block.language }
+          : {}),
+        text: block.text,
         page: pageOf(block.page),
         ...optionalFields(block),
       };

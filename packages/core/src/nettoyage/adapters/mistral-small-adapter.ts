@@ -15,6 +15,7 @@
  * deliberately absent from `MistralSmallConfig`: AD-8's non-alteration guarantee
  * must not be configurable away.
  */
+import { fetchWithRetry, type HttpRetryOptions } from '../../http-retry';
 import {
   type LlmCompletionRequest,
   LlmConfigError,
@@ -33,6 +34,8 @@ export interface MistralSmallConfig {
   model?: string;
   /** Request timeout in ms (default 60s) — bounds a hung completion. */
   timeoutMs?: number;
+  /** Bounded retry options on transient HTTP 429/502/503/504, or `false` to disable. */
+  retry?: HttpRetryOptions | false;
 }
 
 interface MistralChatEnvelope {
@@ -52,7 +55,15 @@ export class MistralSmallAdapter implements LlmProvider {
       throw new LlmConfigError('No Mistral API key configured. Set MISTRAL_API_KEY.');
     }
     this.apiKey = config.apiKey;
-    this.fetchImpl = config.fetch ?? fetch;
+    const rawFetch = config.fetch ?? fetch;
+    const retryOptions: HttpRetryOptions | false =
+      config.retry === false
+        ? false
+        : {
+            baseDelayMs: config.fetch ? 0 : 250,
+            ...config.retry,
+          };
+    this.fetchImpl = fetchWithRetry(rawFetch, retryOptions);
     this.baseUrl = config.baseUrl ?? 'https://api.mistral.ai/v1/chat/completions';
     this.model = config.model ?? 'mistral-small-latest';
     this.timeoutMs = config.timeoutMs ?? 60_000;

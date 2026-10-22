@@ -18,16 +18,57 @@ import { type EngineRegistry, JinaReaderAdapter, MistralOcrAdapter } from '@data
  * born-digital PDF via OCR rather than refusing it — Story 4.2 covers that
  * behaviour explicitly.
  */
+function parsePositiveInt(raw: string | undefined): number | undefined {
+  const trimmed = raw?.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function resolveOcrEndpoint(raw: string | undefined): string | undefined {
+  const trimmed = raw?.trim().replace(/\/+$/, '');
+  if (!trimmed) return undefined;
+  if (trimmed.endsWith('/ocr')) return trimmed;
+  if (trimmed.endsWith('/v1')) return `${trimmed}/ocr`;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.pathname === '' || parsed.pathname === '/') {
+      return `${trimmed}/v1/ocr`;
+    }
+  } catch {
+    // Pass through non-URL strings unchanged.
+  }
+  return trimmed;
+}
+
 export function composeEngines(
   env: Record<string, string | undefined> = process.env,
 ): EngineRegistry {
   const registry: EngineRegistry = {};
 
   const jinaKey = env.JINA_API_KEY?.trim();
-  if (jinaKey) registry.reader = new JinaReaderAdapter({ apiKey: jinaKey });
+  const readerBaseUrl = env.READER_BASE_URL?.trim();
+  const readerTimeoutMs = parsePositiveInt(env.READER_TIMEOUT_MS);
+  if (jinaKey) {
+    registry.reader = new JinaReaderAdapter({
+      apiKey: jinaKey,
+      ...(readerBaseUrl ? { baseUrl: readerBaseUrl } : {}),
+      ...(readerTimeoutMs !== undefined ? { timeoutMs: readerTimeoutMs } : {}),
+    });
+  }
 
   const mistralKey = env.MISTRAL_API_KEY?.trim();
-  if (mistralKey) registry.ocr = new MistralOcrAdapter({ apiKey: mistralKey });
+  const ocrBaseUrl = resolveOcrEndpoint(env.OCR_BASE_URL);
+  const ocrModel = env.OCR_MODEL?.trim();
+  const ocrTimeoutMs = parsePositiveInt(env.OCR_TIMEOUT_MS);
+  if (mistralKey) {
+    registry.ocr = new MistralOcrAdapter({
+      apiKey: mistralKey,
+      ...(ocrBaseUrl ? { baseUrl: ocrBaseUrl } : {}),
+      ...(ocrModel ? { model: ocrModel } : {}),
+      ...(ocrTimeoutMs !== undefined ? { timeoutMs: ocrTimeoutMs } : {}),
+    });
+  }
 
   return registry;
 }

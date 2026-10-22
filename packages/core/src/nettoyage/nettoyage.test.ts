@@ -89,13 +89,14 @@ describe('cleanDocument — every failure path falls back to rule-only (AC3)', (
   });
 
   it('falls back when the model deletes protected content', async () => {
+    const docWithNoisyAmount = doc([{ type: 'paragraph', text: `Total | : 12,50`, page: 1 }]);
     const overEager = provider((texts) =>
       JSON.stringify(texts.map((t) => t.replace('12,50', '1250'))),
     );
-    const result = await cleanDocument(noisy, overEager);
+    const result = await cleanDocument(docWithNoisyAmount, overEager);
     expect(result.outcome).toBe('rule-only');
     expect(result.rejection?.reason).toBe('protected-content-removed');
-    expect(flattenTexts(result.document)).toEqual(ruleOnlyTexts);
+    expect(flattenTexts(result.document)).toEqual(['Total | : 12,50']);
   });
 
   it('falls back when the model adds content', async () => {
@@ -122,7 +123,7 @@ describe('cleanDocument — every failure path falls back to rule-only (AC3)', (
   });
 
   it('falls back on a wrong-length reply (truncated or merged)', async () => {
-    const truncating = provider((texts) => JSON.stringify(texts.slice(0, 2)));
+    const truncating = provider((texts) => JSON.stringify(texts.slice(0, 1)));
     const result = await cleanDocument(noisy, truncating);
     expect(result.outcome).toBe('rule-only');
     expect(result.failure?.reason).toBe('reply-length-mismatch');
@@ -137,16 +138,42 @@ describe('cleanDocument — every failure path falls back to rule-only (AC3)', (
     expect(flattenTexts(result.document)).toEqual(ruleOnlyTexts);
   });
 
-  it('never applies a cleanup partially — one bad element rejects the whole document', async () => {
-    // Element 0 is cleaned legitimately; element 1 is rewritten. All or nothing.
+  it('verifies granularly per string — keeps accepted cleanups and falls back to raw only for rejected slots', async () => {
+    // Noisy has 2 noisy elements sent to the LLM: slot 0 (`Rapport────`) and slot 2 (`─ un`).
+    // Subset element 0 is cleaned legitimately; subset element 1 (doc slot 2) is rewritten.
     const mixed = provider((texts) =>
       JSON.stringify(texts.map((t, i) => (i === 1 ? 'Rewritten' : t.replaceAll(BOX_H, '').trim()))),
     );
     const result = await cleanDocument(noisy, mixed);
-    expect(result.outcome).toBe('rule-only');
-    expect(flattenTexts(result.document)).toEqual(ruleOnlyTexts);
-    // The legitimately-cleaned element 0 did NOT survive.
-    expect(flattenTexts(result.document)[0]).toBe(`Rapport${BOX_H.repeat(4)}`);
+    expect(result.outcome).toBe('cleaned');
+    expect(result.rejection?.reason).toBe('protected-content-removed');
+    expect(result.rejection?.rejectedIndices).toEqual([2]);
+    // Slot 0 kept its accepted cleanup, while slot 2 fell back to rule-clean rawText.
+    expect(flattenTexts(result.document)).toEqual([
+      'Rapport',
+      'Total : 12,50',
+      `${BOX_H} un`,
+      'deux',
+    ]);
+  });
+
+  it('short-circuits with zero LLM calls when no string contains removable noise', async () => {
+    const cleanDoc = doc([
+      { type: 'heading', level: 1, text: `${ZWSP}Titre propre`, page: 1 },
+      { type: 'paragraph', text: `Total${NBSP}${NBSP}: 12,50`, page: 1 },
+    ]);
+    const never: LlmProvider = {
+      name: 'stub',
+      complete: vi.fn(async () => {
+        throw new Error('should not be called');
+      }),
+    };
+    const result = await cleanDocument(cleanDoc, never);
+    expect(result.outcome).toBe('cleaned');
+    expect(result.rejection).toBeUndefined();
+    expect(result.failure).toBeUndefined();
+    expect(flattenTexts(result.document)).toEqual(['Titre propre', 'Total : 12,50']);
+    expect(never.complete).not.toHaveBeenCalled();
   });
 });
 

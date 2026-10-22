@@ -90,4 +90,18 @@ describe('accessibility of the minimal UI (NFR-9)', () => {
   it('asks not to be indexed — a self-hosted instance is not a public page', () => {
     expect(page).toContain('name="robots" content="noindex"');
   });
+
+  it('defines .visually-hidden CSS so #status does not render visibly beside #notice (2.3.1)', () => {
+    expect(page).toContain('.visually-hidden');
+    expect(page).toMatch(/\.visually-hidden\s*\{[^}]*clip:\s*rect\(0,\s*0,\s*0,\s*0\)/);
+  });
+
+  it('derives the download filename from the uploaded file stem, contains drag & drop, pages and nettoyage controls (2.3)', () => {
+    expect(page).toContain('function stemOf(filename)');
+    expect(page).toContain("anchor.download = downloadStem + '.' + extension");
+    expect(page).toContain('id="dropzone"');
+    expect(page).toContain('id="pages"');
+    expect(page).toContain('id="nettoyage"');
+    expect(page).toContain('id="source-meta"');
+  });
 });

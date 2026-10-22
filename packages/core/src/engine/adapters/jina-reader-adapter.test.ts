@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { syntheticPdf } from '../__fixtures__/synthetic-pdf';
 import { EngineConfigError } from '../port';
 import { JinaReaderAdapter } from './jina-reader-adapter';
 import { jsonFetch } from '../../__testing__/json-fetch';
@@ -64,5 +65,26 @@ describe('JinaReaderAdapter (AC1)', () => {
     });
     const adapter = new JinaReaderAdapter({ apiKey: 'k', fetch: fetchImpl });
     await expect(adapter.extract(pdf)).rejects.toThrow(/network error/);
+  });
+
+  it('populates the true PDF page count via countPdfPages(source.bytes) (1.2)', async () => {
+    const fetchImpl = jsonFetch(200, { data: { content: '# Multi-page\n\nBody.' } });
+    const doc = await new JinaReaderAdapter({ apiKey: 'k', fetch: fetchImpl }).extract({
+      kind: 'pdf',
+      bytes: syntheticPdf(5),
+      filename: 'five-pages.pdf',
+    });
+    expect(doc.source.pages).toBe(5);
+  });
+
+  it('retries transient 429 / 503 responses and succeeds when a retry returns 200 (1.4)', async () => {
+    const responses = [
+      new Response('rate limited', { status: 429, headers: { 'Retry-After': '0' } }),
+      new Response(JSON.stringify({ data: { content: '# Recovered' } }), { status: 200 }),
+    ];
+    const fetchImpl = vi.fn(async () => responses.shift()!);
+    const doc = await new JinaReaderAdapter({ apiKey: 'k', fetch: fetchImpl }).extract(pdf);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(doc.blocks[0]).toMatchObject({ type: 'heading', text: 'Recovered' });
   });
 });

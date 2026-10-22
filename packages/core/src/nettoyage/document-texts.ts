@@ -26,6 +26,7 @@ function blockTextCount(block: Block): number {
   switch (block.type) {
     case 'heading':
     case 'paragraph':
+    case 'code':
       return 1;
     case 'list':
       return block.items.length;
@@ -51,6 +52,7 @@ export function flattenTexts(doc: DocumentModel): string[] {
     switch (block.type) {
       case 'heading':
       case 'paragraph':
+      case 'code':
         texts.push(block.text);
         break;
       case 'list':
@@ -104,6 +106,13 @@ export function withTexts(doc: DocumentModel, texts: readonly string[]): Documen
         return {
           type: 'table',
           rows: block.rows.map((row) => row.map(() => next())),
+          ...copyBase(block),
+        };
+      case 'code':
+        return {
+          type: 'code',
+          ...(block.language !== undefined ? { language: block.language } : {}),
+          text: next(),
           ...copyBase(block),
         };
       default: {

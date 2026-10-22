@@ -10,6 +10,12 @@ import { probeTextLayer, type TextLayerVerdict } from './text-layer-probe';
 
 export interface EngineRegistry {
   reader?: DocumentEngine;
+  /**
+   * Optional local/offline PDF reader fallback (e.g. `LocalPdfReaderAdapter`),
+   * tried after `reader` and before `ocr` for `born-digital` PDFs so embedded
+   * text layers are extracted at zero API cost when no remote reader key is set.
+   */
+  localReader?: DocumentEngine;
   ocr?: DocumentEngine;
 }
 
@@ -36,12 +42,12 @@ export class EngineRouter {
       throw cause;
     }
 
-    // born-digital → reader (cheap), fall back to OCR.
-    // image-only / ambiguous → OCR, fall back to reader only if that's all there is.
+    // born-digital → reader (cheap), then localReader (free local), then fall back to OCR.
+    // image-only / ambiguous → OCR, fall back to reader / localReader only if that's all there is.
     const preferred =
       verdict === 'born-digital'
-        ? [this.engines.reader, this.engines.ocr]
-        : [this.engines.ocr, this.engines.reader];
+        ? [this.engines.reader, this.engines.localReader, this.engines.ocr]
+        : [this.engines.ocr, this.engines.reader, this.engines.localReader];
 
     const engine = preferred.find((candidate): candidate is DocumentEngine => candidate != null);
     if (!engine) {

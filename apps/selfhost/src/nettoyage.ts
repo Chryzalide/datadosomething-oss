@@ -30,15 +30,52 @@ export interface NettoyageComposition {
   provider?: LlmProvider;
 }
 
+function parsePositiveInt(raw: string | undefined): number | undefined {
+  const trimmed = raw?.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function resolveChatEndpoint(raw: string | undefined): string | undefined {
+  const trimmed = raw?.trim().replace(/\/+$/, '');
+  if (!trimmed) return undefined;
+  if (trimmed.endsWith('/chat/completions')) return trimmed;
+  if (trimmed.endsWith('/v1')) return `${trimmed}/chat/completions`;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.pathname === '' || parsed.pathname === '/') {
+      return `${trimmed}/v1/chat/completions`;
+    }
+  } catch {
+    // Pass through non-URL strings unchanged.
+  }
+  return trimmed;
+}
+
 export function composeNettoyage(
   env: Record<string, string | undefined> = process.env,
+  enabledOverride?: boolean,
 ): NettoyageComposition {
-  if (!selfhostNettoyageEnabled(env)) return { enabled: false };
+  const enabled = enabledOverride ?? selfhostNettoyageEnabled(env);
+  if (!enabled) return { enabled: false };
 
-  const mistralKey = env.MISTRAL_API_KEY?.trim();
-  if (!mistralKey) return { enabled: true };
+  const apiKey = env.NETTOYAGE_API_KEY?.trim() || env.MISTRAL_API_KEY?.trim();
+  if (!apiKey) return { enabled: true };
 
-  return { enabled: true, provider: new MistralSmallAdapter({ apiKey: mistralKey }) };
+  const baseUrl = resolveChatEndpoint(env.NETTOYAGE_BASE_URL);
+  const model = env.NETTOYAGE_MODEL?.trim();
+  const timeoutMs = parsePositiveInt(env.NETTOYAGE_TIMEOUT_MS);
+
+  return {
+    enabled: true,
+    provider: new MistralSmallAdapter({
+      apiKey,
+      ...(baseUrl ? { baseUrl } : {}),
+      ...(model ? { model } : {}),
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    }),
+  };
 }
 
 /**
@@ -56,9 +93,10 @@ export function composeNettoyage(
 export async function applyNettoyage(
   doc: DocumentModel,
   env: Record<string, string | undefined> = process.env,
+  options: { enabled?: boolean } = {},
 ): Promise<{ document: DocumentModel; report?: NettoyageReport }> {
   try {
-    const { enabled, provider } = composeNettoyage(env);
+    const { enabled, provider } = composeNettoyage(env, options.enabled);
     if (!enabled || !provider) return { document: doc };
 
     const result = await cleanDocument(doc, provider);

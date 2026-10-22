@@ -93,6 +93,14 @@ module.exports = {
   ],
   options: {
     doNotFollow: { path: 'node_modules' },
+    // Build output, not source. Without this, `pnpm boundaries` after a local
+    // `pnpm build` dies with "Maximum call stack size exceeded" inside a
+    // Turbopack chunk — and it reads as a boundary violation when it is nothing
+    // of the sort, which cost two people an investigation each. CI never saw it
+    // (it runs `boundaries` before `build`, and a fresh checkout has no `.next`),
+    // so this is a developer-experience fix rather than a correctness one.
+    // Recorded as deferred since the Story 3.1 review; closed here.
+    exclude: { path: '(^|/)\\.next/' },
     tsPreCompilationDeps: true,
     tsConfig: { fileName: 'tsconfig.base.json' },
     enhancedResolveOptions: {
