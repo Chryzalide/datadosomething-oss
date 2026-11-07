@@ -185,6 +185,27 @@ describe('verifier REJECTS (AC2, AC3 — the reject half of the suite)', () => {
     // in the raw text, so the subsequence check catches it.
     rejects('12|50', '12 50', 'content-not-a-subsequence');
   });
+
+  it('rejects collapsing line breaks or altering leading indentation in multiline code/list slots', () => {
+    // Collapsing a comment line onto the next executable line in a code block
+    // comments out the executable statement — a semantic alteration.
+    rejects(
+      '# verify signature\nauthenticate_user()',
+      '# verify signature authenticate_user()',
+      'protected-content-removed',
+    );
+    // Altering indentation in a multiline block changes block scope in Python/YAML.
+    rejects(
+      'if guard:\n    return\n  cleanup()',
+      'if guard:\n    return\n    cleanup()',
+      'protected-content-removed',
+    );
+    // Genuine removable noise on a multiline block is still accepted when line
+    // breaks and indentation are preserved.
+    expect(
+      verifyCleanedText(`def f():\n    return 42 ${BOX_H.repeat(3)}`, 'def f():\n    return 42'),
+    ).toEqual({ accepted: true });
+  });
 });
 
 describe('verifyCleanedDocument — structure is immutable (AC2)', () => {

@@ -49,16 +49,24 @@ export async function inspectPdfTextLayer(bytes: Uint8Array): Promise<PdfTextLay
     // pdf.js DETACHES the ArrayBuffer it is handed — pass a copy so the caller's
     // bytes survive for the subsequent extract() call (the router reuses them).
     const pdf = await getDocumentProxy(new Uint8Array(bytes));
-    const { text, totalPages } = await extractText(pdf, { mergePages: false });
-    pageTexts = Array.isArray(text) ? text.map((t) => t ?? '') : [text ?? ''];
-    const rawNumPages = (pdf as { numPages?: unknown }).numPages;
-    if (typeof rawNumPages === 'number' && Number.isInteger(rawNumPages) && rawNumPages >= 1) {
-      pages = rawNumPages;
-      hasRealNumPages = true;
-    } else if (typeof totalPages === 'number' && Number.isInteger(totalPages) && totalPages >= 1) {
-      pages = totalPages;
-    } else {
-      pages = Math.max(pageTexts.length, 1);
+    try {
+      const { text, totalPages } = await extractText(pdf, { mergePages: false });
+      pageTexts = Array.isArray(text) ? text.map((t) => t ?? '') : [text ?? ''];
+      const rawNumPages = (pdf as { numPages?: unknown }).numPages;
+      if (typeof rawNumPages === 'number' && Number.isInteger(rawNumPages) && rawNumPages >= 1) {
+        pages = rawNumPages;
+        hasRealNumPages = true;
+      } else if (
+        typeof totalPages === 'number' &&
+        Number.isInteger(totalPages) &&
+        totalPages >= 1
+      ) {
+        pages = totalPages;
+      } else {
+        pages = Math.max(pageTexts.length, 1);
+      }
+    } finally {
+      await (pdf as { destroy?: () => Promise<void> }).destroy?.();
     }
   } catch (cause) {
     // A corrupt/encrypted PDF is an explicit error — never a silent "image-only".
@@ -68,8 +76,16 @@ export async function inspectPdfTextLayer(bytes: Uint8Array): Promise<PdfTextLay
     );
   }
 
-  const extracted = pageTexts.join('\n');
-  const meaningful = extracted.replace(/\s+/g, '').length;
+  let meaningful = 0;
+  for (const pageText of pageTexts) {
+    for (let i = 0; i < pageText.length; i += 1) {
+      if (!/\s/.test(pageText[i]!)) {
+        meaningful += 1;
+        if (meaningful >= BORN_DIGITAL_MIN_CHARS) break;
+      }
+    }
+    if (meaningful >= BORN_DIGITAL_MIN_CHARS) break;
+  }
   const verdict: TextLayerVerdict =
     meaningful >= BORN_DIGITAL_MIN_CHARS
       ? 'born-digital'

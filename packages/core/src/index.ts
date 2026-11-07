@@ -14,7 +14,7 @@
 export const CORE_PACKAGE = '@datadosomething/core' as const;
 
 /** Current SemVer release of `@datadosomething/core`, kept in lockstep with `package.json`. */
-export const CORE_VERSION = '1.1.0' as const;
+export const CORE_VERSION = '1.1.1' as const;
 
 /** Current SemVer release of the engine. */
 export function coreVersion(): string {

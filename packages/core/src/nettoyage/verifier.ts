@@ -116,8 +116,7 @@ function isSubsequence(candidate: string, raw: string): boolean {
   return i === c.length;
 }
 
-/** Verify one candidate text value against its raw counterpart (stage 3). */
-export function verifyCleanedText(raw: string, candidate: string): NettoyageVerdict {
+function verifyCleanedSingleLine(raw: string, candidate: string): NettoyageVerdict {
   const normalizedRaw = ruleCleanText(raw);
   const normalizedCandidate = ruleCleanText(candidate);
 
@@ -138,6 +137,39 @@ export function verifyCleanedText(raw: string, candidate: string): NettoyageVerd
   }
 
   return ACCEPTED;
+}
+
+/** Verify one candidate text value against its raw counterpart (stage 3). */
+export function verifyCleanedText(raw: string, candidate: string): NettoyageVerdict {
+  const codeRaw = ruleCleanCodeText(raw);
+  if (codeRaw.includes('\n')) {
+    const codeCandidate = ruleCleanCodeText(candidate);
+    const rawLines = codeRaw.split('\n');
+    const candidateLines = codeCandidate.split('\n');
+    if (rawLines.length !== candidateLines.length) {
+      return reject(
+        'protected-content-removed',
+        'the candidate altered line breaks in a multiline text value',
+      );
+    }
+    for (let i = 0; i < rawLines.length; i += 1) {
+      const rawLine = rawLines[i] ?? '';
+      const candLine = candidateLines[i] ?? '';
+      const rawIndent = /^[\t ]*/.exec(rawLine)?.[0] ?? '';
+      const candIndent = /^[\t ]*/.exec(candLine)?.[0] ?? '';
+      if (rawIndent !== candIndent) {
+        return reject(
+          'protected-content-removed',
+          'the candidate altered leading indentation in a multiline text value',
+        );
+      }
+      const lineVerdict = verifyCleanedSingleLine(rawLine, candLine);
+      if (!lineVerdict.accepted) return lineVerdict;
+    }
+    return ACCEPTED;
+  }
+
+  return verifyCleanedSingleLine(raw, candidate);
 }
 
 /** Structural fingerprint of a block: everything Nettoyage must leave alone. */

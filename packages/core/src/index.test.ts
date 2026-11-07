@@ -11,8 +11,8 @@ describe('@datadosomething/core identity and versioning', () => {
     const manifest = JSON.parse(
       readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
     ) as { version: string };
-    expect(coreVersion()).toBe('1.1.0');
-    expect(CORE_VERSION).toBe('1.1.0');
+    expect(coreVersion()).toBe(manifest.version);
+    expect(CORE_VERSION).toBe(manifest.version);
     expect(coreVersion()).toMatch(/^\d+\.\d+\.\d+$/);
     expect(coreVersion()).not.toBe('0.0.0');
     expect(manifest.version).toBe(coreVersion());

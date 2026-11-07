@@ -52,7 +52,11 @@ export async function countPdfPages(bytes: Uint8Array): Promise<number> {
   let pages: number;
   try {
     const pdf = await getDocumentProxy(new Uint8Array(bytes));
-    pages = pdf.numPages;
+    try {
+      pages = pdf.numPages;
+    } finally {
+      await (pdf as { destroy?: () => Promise<void> }).destroy?.();
+    }
   } catch (cause) {
     throw new PageCountError(
       `Could not read the PDF page count: ${cause instanceof Error ? cause.message : String(cause)}`,

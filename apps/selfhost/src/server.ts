@@ -111,7 +111,7 @@ async function readBody(
  * the platform's multipart parser (undici — the same one Next uses in the hub).
  * This is what keeps the dependency count at zero without hand-rolling multipart.
  */
-function toRequest(req: IncomingMessage, body: Buffer): Request {
+function toRequest(req: IncomingMessage, body: Buffer, parsedUrl: URL): Request {
   const headers = new Headers();
   for (const [name, value] of Object.entries(req.headers)) {
     if (value === undefined) continue;
@@ -121,7 +121,7 @@ function toRequest(req: IncomingMessage, body: Buffer): Request {
   // Zero-copy view over the underlying ArrayBuffer — avoids duplicating a 100 MB
   // upload buffer before multipart parsing (`new Uint8Array(buffer)` copies).
   const view = new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
-  return new Request(`http://localhost${req.url ?? '/'}`, {
+  return new Request(parsedUrl, {
     method: req.method ?? 'GET',
     headers,
     body: view as Uint8Array<ArrayBuffer>,
@@ -144,6 +144,34 @@ function verifyBearerToken(req: IncomingMessage, expectedToken: string): boolean
   return timingSafeEqual(provided, expected);
 }
 
+/**
+ * Reject cross-origin browser POSTs (loopback CSRF / Fetch Metadata defense).
+ * Non-browser CLI/SDK callers omit `Origin` and `Sec-Fetch-Site` and are unaffected.
+ */
+function isCrossOriginRequest(req: IncomingMessage): boolean {
+  const secFetchSite = req.headers['sec-fetch-site'];
+  if (typeof secFetchSite === 'string') {
+    const normalized = secFetchSite.trim().toLowerCase();
+    if (normalized !== 'same-origin' && normalized !== 'none') return true;
+  }
+
+  const origin = req.headers.origin;
+  if (typeof origin === 'string') {
+    const trimmed = origin.trim();
+    if (trimmed === '' || trimmed.toLowerCase() === 'null') return true;
+    const host = req.headers.host?.trim().toLowerCase();
+    if (!host) return true;
+    try {
+      const originUrl = new URL(trimmed);
+      if (originUrl.host.toLowerCase() !== host) return true;
+    } catch {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function createSelfhostServer(options: SelfhostServerOptions = {}): Server {
   const env = options.env ?? process.env;
   // Composed once at startup, exactly as the AC describes ("when the app starts").
@@ -151,11 +179,22 @@ export function createSelfhostServer(options: SelfhostServerOptions = {}): Serve
 
   return createServer((req, res) => {
     void (async () => {
-      const parsedUrl = new URL(req.url ?? '/', 'http://localhost');
-      const pathname = parsedUrl.pathname;
-      const method = req.method ?? 'GET';
-
       try {
+        const rawUrl = req.url ?? '/';
+        if (!rawUrl.startsWith('/') || rawUrl.startsWith('//')) {
+          sendJson(res, 400, { error: 'Invalid request target.' });
+          return;
+        }
+        let parsedUrl: URL;
+        try {
+          parsedUrl = new URL(rawUrl, 'http://localhost');
+        } catch {
+          sendJson(res, 400, { error: 'Invalid request target.' });
+          return;
+        }
+        const pathname = parsedUrl.pathname;
+        const method = req.method ?? 'GET';
+
         if (pathname === '/' && method === 'GET') {
           sendHtml(res, 200, renderPage());
           return;
@@ -171,6 +210,11 @@ export function createSelfhostServer(options: SelfhostServerOptions = {}): Serve
           if (method !== 'POST') {
             res.writeHead(405, { Allow: 'POST', ...NO_STORE });
             res.end();
+            return;
+          }
+
+          if (isCrossOriginRequest(req)) {
+            sendJson(res, 403, { error: 'Cross-origin requests are not allowed.' });
             return;
           }
 
@@ -200,7 +244,7 @@ export function createSelfhostServer(options: SelfhostServerOptions = {}): Serve
 
           let form: FormData;
           try {
-            form = await toRequest(req, read.body).formData();
+            form = await toRequest(req, read.body, parsedUrl).formData();
           } catch {
             sendJson(res, 400, {
               error: 'Expected a multipart form upload with a "file" field.',

@@ -1,6 +1,6 @@
 # datadosomething — self-host
 
-**Version `1.1.0`** · **Document Model & JSON Schema `v1.0`** · **Node `24.18.0`** · **License `Apache-2.0`**
+**Version `1.1.1`** · **Document Model & JSON Schema `v1.0`** · **Node `24.18.0`** · **License `Apache-2.0`**
 
 Turn PDFs (born-digital or scanned) and images (`PNG`, `JPG`) into clean **Markdown** (`pdftomd`) or structured, schema-versioned **JSON** (`pdftojson`) — on your own infrastructure, with your own provider keys, **zero retention**, and **no quota**.
 
@@ -230,6 +230,7 @@ pnpm test           # Vitest unit & integration suites (no network or API keys r
 pnpm lint           # ESLint
 pnpm boundaries     # dependency-cruiser gate (enforces AD-1 pure-core isolation)
 pnpm license-check  # verifies every runtime dependency in the closure is permissively licensed
+pnpm version:check  # verifies SemVer lockstep and CHANGELOG.md <-> README.md synchronization
 ```
 
 ---
@@ -240,11 +241,25 @@ This repository uses **[Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.
 
 | Version scope                      | Current | Identifier / Location                                                                                        | Policy                                                                                                        |
 | ---------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| **Release & Workspace Version**    | `1.1.0` | `package.json`, `packages/core/package.json`, `apps/selfhost/package.json`, `CORE_VERSION` (`coreVersion()`) | Synchronized across all workspaces in this repo. Bumped according to SemVer (`MAJOR.MINOR.PATCH`).            |
+| **Release & Workspace Version**    | `1.1.1` | `package.json`, `packages/core/package.json`, `apps/selfhost/package.json`, `CORE_VERSION` (`coreVersion()`) | Synchronized across all workspaces in this repo. Bumped according to SemVer (`MAJOR.MINOR.PATCH`).            |
 | **Canonical Document Model**       | `1.0`   | `DOCUMENT_MODEL_VERSION` in `@datadosomething/core`                                                          | Closed internal block contract (`heading`, `paragraph`, `list`, `table`, `code`).                             |
 | **`pdftojson` Public JSON Schema** | `1.0`   | `PDFTOJSON_SCHEMA_VERSION` / `PDFTOJSON_JSON_SCHEMA`                                                         | Public JSON Schema (Draft 2020-12) contract (`schema_version: "1.0"`). Versioned independently from releases. |
 
-All release notes and version history are tracked in **[CHANGELOG.md](CHANGELOG.md)**.
+Every update on the `main` branch carries a synchronized `vX.Y.Z` Git tag and updates the release highlights below (`pnpm version:bump` / `pnpm version:check --check-git-tag`).
+
+<!-- WHATS_NEW_START -->
+
+### What's new in `v1.1.1` (2026-11-07)
+
+Security hardening, PDF proxy lifecycle cleanup, multiline code verifier preservation, and automated SemVer release gate.
+
+- Automated SemVer release and README synchronization gate (`scripts/version.mjs`) enforcing lockstep versions across all workspace manifests, `CORE_VERSION`, `CHANGELOG.md`, and `README.md`.
+- `@datadosomething/core`: Ensure `unpdf` document proxies are deterministically destroyed (`pdf.destroy()`) in `finally` blocks across `countPdfPages` and `inspectPdfTextLayer`, and short-circuit `inspectPdfTextLayer` character counting once `MIN_CHARS_PER_PAGE` is reached.
+- `@datadosomething/core`: Preserve line boundaries and leading indentation in `verifyCleanedText` when verifying multiline code blocks during Stage 3 of Verified Nettoyage.
+- `apps/selfhost`: Reject non-origin-form request targets (`400 Bad Request`), enforce cross-origin request checks (`Sec-Fetch-Site` and `Origin` vs `Host` -> `403 Forbidden`) on `POST /api/*`, and bound `parsePageSelection` ranges to `MAX_PAGE_SELECTION = 10,000`.
+
+Full release notes and version history: **[CHANGELOG.md](CHANGELOG.md)**.
+<!-- WHATS_NEW_END -->
 
 ---
 

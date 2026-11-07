@@ -62,9 +62,12 @@ export interface ConvertOptions {
   pages?: string;
 }
 
+/** Upper bound on selectable 1-based page numbers / total pages in a selection. */
+export const MAX_PAGE_SELECTION = 10_000;
+
 /**
  * Parse a 1-based page range specification such as `"1-5"`, `"2"`, or `"1,3-5"`.
- * Returns `null` when the specification is malformed.
+ * Returns `null` when the specification is malformed or exceeds `MAX_PAGE_SELECTION`.
  */
 export function parsePageSelection(raw: string): Set<number> | null {
   const trimmed = raw.trim();
@@ -77,7 +80,14 @@ export function parsePageSelection(raw: string): Set<number> | null {
     if (rangeMatch) {
       const start = Number(rangeMatch[1]);
       const end = Number(rangeMatch[2]);
-      if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start) {
+      if (
+        !Number.isInteger(start) ||
+        !Number.isInteger(end) ||
+        start < 1 ||
+        end < start ||
+        end > MAX_PAGE_SELECTION ||
+        selected.size + (end - start + 1) > MAX_PAGE_SELECTION
+      ) {
         return null;
       }
       for (let p = start; p <= end; p += 1) selected.add(p);
@@ -85,7 +95,14 @@ export function parsePageSelection(raw: string): Set<number> | null {
     }
     if (/^\d+$/.test(token)) {
       const page = Number(token);
-      if (!Number.isInteger(page) || page < 1) return null;
+      if (
+        !Number.isInteger(page) ||
+        page < 1 ||
+        page > MAX_PAGE_SELECTION ||
+        selected.size >= MAX_PAGE_SELECTION
+      ) {
+        return null;
+      }
       selected.add(page);
       continue;
     }

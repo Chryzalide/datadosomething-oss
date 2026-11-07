@@ -1,6 +1,6 @@
 {
   "name": "@datadosomething/core",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "The pure conversion engine (Moteur) of datadosomething: canonical Document Model, Markdown and JSON renderers, dual-engine routing (reader + OCR), and 3-stage verified Nettoyage. Vendor-SDK-free, framework-free.",
   "license": "Apache-2.0",
   "type": "module",

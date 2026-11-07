@@ -1,6 +1,6 @@
 {
   "name": "datadosomething-selfhost",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": false,
   "description": "datadosomething self-host — the Apache-2.0 distribution: the pure engine (packages/core) and the thin BYO-keys app over it (apps/selfhost). PDF to clean Markdown or structured JSON, on your own infrastructure, with your own provider keys and no quota.",
   "license": "Apache-2.0",
@@ -26,6 +26,9 @@
     "lint": "eslint .",
     "boundaries": "depcruise packages apps",
     "license-check": "node scripts/license-check.mjs",
+    "version:check": "node scripts/version.mjs check",
+    "version:sync-readme": "node scripts/version.mjs sync-readme",
+    "version:bump": "node scripts/version.mjs bump",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "start": "pnpm --filter selfhost start"

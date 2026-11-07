@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
+import { request as httpRequest, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { Server } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createDocument,
@@ -633,6 +633,69 @@ describe('API metadata, per-request options & SELFHOST_API_TOKEN (2.2 / 2.3)', (
       expect(calledUrl).toBe('https://llm.custom.local/v1/chat/completions');
       expect(calledModel).toBe('qwen2.5-7b-instruct');
       expect(calledAuth).toBe('Bearer custom-llm-key');
+    } finally {
+      await close();
+    }
+  });
+
+  it('400s a scheme-relative or malformed request target without crashing the process', async () => {
+    const { server, close } = await boot();
+    try {
+      const { port } = server.address() as AddressInfo;
+      const status = await new Promise<number>((resolve, reject) => {
+        const req = httpRequest(
+          { host: '127.0.0.1', port, path: '//a:b', method: 'GET' },
+          (res) => {
+            res.resume();
+            resolve(res.statusCode ?? 0);
+          },
+        );
+        req.on('error', reject);
+        req.end();
+      });
+      expect(status).toBe(400);
+    } finally {
+      await close();
+    }
+  });
+
+  it('403s cross-origin browser POSTs (Origin / Sec-Fetch-Site) while allowing CLI/same-origin', async () => {
+    const { base, close } = await boot();
+    try {
+      const crossOrigin = await fetch(`${base}/api/pdftomd`, {
+        method: 'POST',
+        headers: { Origin: 'https://evil.example' },
+        body: pdfForm(),
+      });
+      expect(crossOrigin.status).toBe(403);
+
+      const crossSite = await fetch(`${base}/api/pdftomd`, {
+        method: 'POST',
+        headers: { 'Sec-Fetch-Site': 'cross-site' },
+        body: pdfForm(),
+      });
+      expect(crossSite.status).toBe(403);
+
+      const sameOrigin = await fetch(`${base}/api/pdftomd`, {
+        method: 'POST',
+        headers: { Origin: base, 'Sec-Fetch-Site': 'same-origin' },
+        body: pdfForm(),
+      });
+      expect(sameOrigin.status).toBe(200);
+    } finally {
+      await close();
+    }
+  });
+
+  it('400s an oversized pages range rather than allocating millions of entries', async () => {
+    const { base, close } = await boot();
+    try {
+      const res = await fetch(`${base}/api/pdftomd?pages=1-20000000`, {
+        method: 'POST',
+        body: pdfForm(),
+      });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: string }).error).toMatch(/pages/);
     } finally {
       await close();
     }

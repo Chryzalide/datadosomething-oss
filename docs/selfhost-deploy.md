@@ -155,30 +155,35 @@ conversions finish rather than being cut off.
 
 ## Publishing the public repo (maintainers)
 
-The public Apache-2.0 repository is **generated**, never hand-copied:
+Every update on the `main` branch must carry a new SemVer release tag (`vX.Y.Z`) and update the synchronized **"What's new"** section in `README.md` from `CHANGELOG.md`. Before splitting and pushing a release:
 
 ```bash
+# 1. Bump the version across all manifests, CORE_VERSION, CHANGELOG.md, and README.md:
+pnpm version:bump minor \
+  --summary "Short release summary." \
+  --added "**Feature Name (\`@datadosomething/core\`)**: Description of what landed."
+
+# 2. Generate and verify the public Apache-2.0 tree:
 pnpm oss:split ../datadosomething-oss
 ```
 
-That writes `packages/core` + `apps/selfhost` and the files they need into the
+`pnpm oss:split` writes `packages/core` + `apps/selfhost` and the files they need into the
 target directory, rewrites the root manifest to Apache-2.0, prunes the hosted
 app's importer out of the lockfile, and then verifies its own output: no
 `apps/hub` path, no reference to it in any source file, no hub CI pipeline, no
-dangling documentation links. It fails loudly rather than publishing a tree it
+dangling documentation links, and full SemVer + `CHANGELOG.md` ↔ `README.md` synchronization (`verifyVersioning`). It fails loudly rather than publishing a tree it
 cannot vouch for.
 
-It writes a directory and **publishes nothing**. Creating the repository,
-choosing its visibility and pushing are deliberate manual steps:
+It writes a directory and **publishes nothing**. Reviewing, committing, tagging `vX.Y.Z`, and pushing are deliberate steps (and CI on `main` enforces `pnpm version:check --check-git-tag` and automatically ensures the annotated tag `vX.Y.Z` exists on `origin`):
 
 ```bash
 cd ../datadosomething-oss
-pnpm install --frozen-lockfile && pnpm lint && pnpm test && pnpm boundaries && pnpm build
+pnpm install --frozen-lockfile && pnpm version:check && pnpm lint && pnpm test && pnpm boundaries && pnpm build
 pnpm license-check          # AR-10: nothing non-commercial in the distributed closure
-git init && git add -A && git commit -m "datadosomething self-host (Apache-2.0)"
-# then create the public repo and push
+VERSION="$(node scripts/version.mjs current)"
+git add -A && git commit -m "Release v${VERSION}"
+git tag -a "v${VERSION}" -m "Release v${VERSION}"
+git push origin main --follow-tags
 ```
 
-`pnpm license-check` also runs in CI on every push here, so a dependency with a
-non-commercial license (the CC-BY-NC case AR-10 names) fails the build long
-before it could reach the public repo.
+`pnpm license-check` and `pnpm version:check --check-git-tag` also run in CI on every push to `main`, so neither a dependency with a non-commercial license (AR-10) nor an untagged / stale-README update can land on the public branch.

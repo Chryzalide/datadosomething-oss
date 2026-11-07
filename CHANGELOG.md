@@ -4,11 +4,27 @@ All notable changes to the **datadosomething** Apache-2.0 distribution (`@datado
 
 This project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html) (`MAJOR.MINOR.PATCH`) and separates **release versioning** from **data-contract versioning**:
 
-- **Release & Workspace Version (`1.1.0`)**: Synchronized across the root manifest (`datadosomething-selfhost`), `@datadosomething/core` (`CORE_VERSION` / `coreVersion()`), and `apps/selfhost`.
+- **Release & Workspace Version (`1.1.1`)**: Synchronized across the root manifest (`datadosomething-selfhost`), `@datadosomething/core` (`CORE_VERSION` / `coreVersion()`), and `apps/selfhost`.
   - **MAJOR**: Incompatible changes to the HTTP API routes, environment variable semantics, runtime floor, or public TypeScript exports of `@datadosomething/core`.
   - **MINOR**: Backward-compatible features, new provider adapters, or additive configuration options.
   - **PATCH**: Deterministic bug fixes, rule/verifier refinements, dependency security updates, and documentation improvements.
 - **Data Contract Versions (`1.0`)**: `DOCUMENT_MODEL_VERSION` (`"1.0"`) and `PDFTOJSON_SCHEMA_VERSION` (`"1.0"`) version the canonical block set (`heading`, `paragraph`, `list`, `table`, `code`) and the published JSON Schema (Draft 2020-12) independently from engine releases, so patch and minor engine upgrades never break downstream consumers of `/api/pdftojson`.
+
+---
+
+## [1.1.1] - 2026-11-07
+
+Security hardening, PDF proxy lifecycle cleanup, multiline code verifier preservation, and automated SemVer release gate.
+
+### Added
+
+- Automated SemVer release and README synchronization gate (`scripts/version.mjs`) enforcing lockstep versions across all workspace manifests, `CORE_VERSION`, `CHANGELOG.md`, and `README.md`.
+
+### Fixed
+
+- `@datadosomething/core`: Ensure `unpdf` document proxies are deterministically destroyed (`pdf.destroy()`) in `finally` blocks across `countPdfPages` and `inspectPdfTextLayer`, and short-circuit `inspectPdfTextLayer` character counting once `MIN_CHARS_PER_PAGE` is reached.
+- `@datadosomething/core`: Preserve line boundaries and leading indentation in `verifyCleanedText` when verifying multiline code blocks during Stage 3 of Verified Nettoyage.
+- `apps/selfhost`: Reject non-origin-form request targets (`400 Bad Request`), enforce cross-origin request checks (`Sec-Fetch-Site` and `Origin` vs `Host` -> `403 Forbidden`) on `POST /api/*`, and bound `parsePageSelection` ranges to `MAX_PAGE_SELECTION = 10,000`.
 
 ---
 

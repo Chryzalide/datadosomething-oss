@@ -27,6 +27,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -39,6 +41,16 @@ jobs:
 
       - name: Install
         run: pnpm install --frozen-lockfile
+
+      - name: Version & README sync gate
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            pnpm version:check --tag "${GITHUB_REF_NAME}"
+          elif [ "${GITHUB_REF}" = "refs/heads/main" ] || [ "${GITHUB_BASE_REF}" = "main" ]; then
+            pnpm version:check --check-git-tag
+          else
+            pnpm version:check
+          fi
 
       - name: Lint
         run: pnpm lint
@@ -64,3 +76,36 @@ jobs:
       # image is yours to run, not ours to publish.
       - name: Build the container image
         run: docker build -f apps/selfhost/Dockerfile -t datadosomething-selfhost:ci .
+
+  tag-release:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Ensure annotated Git tag vX.Y.Z on main
+        run: |
+          VERSION="$(node scripts/version.mjs current)"
+          TAG="v${VERSION}"
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "Tag ${TAG} already exists at $(git rev-parse --short "refs/tags/${TAG}^{commit}")."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            NOTES_FILE="$(mktemp)"
+            node scripts/version.mjs release-notes --version "${VERSION}" > "${NOTES_FILE}"
+            git tag -a "${TAG}" -F "${NOTES_FILE}"
+            git push origin "refs/tags/${TAG}"
+            rm -f "${NOTES_FILE}"
+          fi

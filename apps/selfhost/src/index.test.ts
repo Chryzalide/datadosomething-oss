@@ -8,7 +8,7 @@ describe('selfhost identity and versioning', () => {
     const manifest = JSON.parse(
       readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
     ) as { version: string };
-    expect(describeSelfhost()).toBe('selfhost over @datadosomething/core@1.1.0');
+    expect(describeSelfhost()).toBe(`selfhost over @datadosomething/core@${manifest.version}`);
     expect(manifest.version).toBe(coreVersion());
   });
 });
